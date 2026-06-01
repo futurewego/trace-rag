@@ -1,0 +1,86 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f5f5f7;
+  color: #1d1d1f;
+  line-height: 1.5;
+}
+a { color: #0071e3; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+header {
+  background: #fff;
+  border-bottom: 1px solid #e5e5e7;
+  padding: 12px 24px;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+header h1 { font-size: 16px; font-weight: 600; }
+header nav { display: flex; gap: 16px; }
+header nav a { font-size: 14px; }
+
+main { max-width: 800px; margin: 24px auto; padding: 0 24px; }
+
+button {
+  background: #0071e3;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+button:disabled { background: #999; cursor: not-allowed; }
+button:hover:not(:disabled) { background: #0058b9; }
+
+textarea, input[type="file"], input[type="text"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+}
+textarea { resize: vertical; min-height: 80px; }
+
+.card {
+  background: #fff;
+  border: 1px solid #e5e5e7;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.muted { color: #6e6e73; font-size: 13px; }
+.error { color: #c81e1e; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e5e5e7; }
+th { background: #fafafa; font-weight: 600; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+.badge-queued { background: #fff3cd; color: #855804; }
+.badge-parsing { background: #cfe2ff; color: #084298; }
+.badge-indexed { background: #d1e7dd; color: #0f5132; }
+.badge-failed { background: #f8d7da; color: #842029; }
+
+.citation {
+  background: #f5f5f7;
+  border-left: 3px solid #0071e3;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.citation-num { font-weight: 600; color: #0071e3; margin-right: 6px; }
+
+.message {
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+}
+.message-user { background: #0071e3; color: #fff; align-self: flex-end; max-width: 80%; }
+.message-assistant { background: #fff; border: 1px solid #e5e5e7; }
+
+.messages { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }

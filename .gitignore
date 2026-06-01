@@ -55,3 +55,5 @@ node_modules/
 .next/
 out/
 .turbo/
+next-env.d.ts.bak
+rag-frontend/.env.local
