@@ -1,9 +1,11 @@
+import time
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.models import Message
+from app.models import Message, RetrievalLog
 from app.models import Session as ChatSession
 from app.schemas.citation import Citation
 from app.services.generation_service import generate_answer
@@ -37,9 +39,32 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     db.add(Message(session_id=session.id, role="user", content=req.message))
     db.flush()
 
+    t0 = time.perf_counter()
     retrieved = retrieve(db, req.message)
-    answer, citations = generate_answer(req.message, retrieved)
+    retrieval_ms = int((time.perf_counter() - t0) * 1000)
 
+    t1 = time.perf_counter()
+    answer, citations = generate_answer(req.message, retrieved)
+    generation_ms = int((time.perf_counter() - t1) * 1000)
+
+    db.add(
+        RetrievalLog(
+            session_id=session.id,
+            query=req.message,
+            retrieved_chunks=[
+                {
+                    "chunk_id": r.chunk_id,
+                    "doc": r.filename,
+                    "page": r.page_num,
+                    "score": r.score,
+                }
+                for r in retrieved
+            ],
+            chunks_sent_to_llm=len(retrieved),
+            retrieval_latency_ms=retrieval_ms,
+            generation_latency_ms=generation_ms,
+        )
+    )
     db.add(
         Message(
             session_id=session.id,
