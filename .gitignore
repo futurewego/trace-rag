@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+build/
+dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Secrets & local config
+rag-backend/.env
+.env
+.env.local
+
+# Local uploads / runtime data
+rag-backend/uploads/*
+!rag-backend/uploads/.gitkeep
+
+# Backups produced by M1 plan
+*.v1-backup
+
+# Node / frontend
+node_modules/
+.next/
+out/
+.turbo/
