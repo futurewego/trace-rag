@@ -1,66 +1,53 @@
-.PHONY: up down logs migrate dev worker beat test lint fmt typecheck clean
+.PHONY: up down logs migrate migrate-rollback migrate-new dev frontend test test-unit lint fmt typecheck clean
 
-# 基础设施
+# Infra
 up:
-	docker-compose up -d
-	@echo "等待服务就绪..."
+	docker compose up -d
+	@echo "Waiting for postgres..."
 	@sleep 3
-	@docker-compose ps
+	@docker compose ps
 
 down:
-	docker-compose down
+	docker compose down
 
 logs:
-	docker-compose logs -f
+	docker compose logs -f
 
-# 数据库
+# Database
 migrate:
-	cd rag-backend && alembic upgrade head
+	cd rag-backend && . .venv/bin/activate && alembic upgrade head
 
 migrate-rollback:
-	cd rag-backend && alembic downgrade -1
+	cd rag-backend && . .venv/bin/activate && alembic downgrade -1
 
 migrate-new:
-	cd rag-backend && alembic revision --autogenerate -m "$(MSG)"
+	cd rag-backend && . .venv/bin/activate && alembic revision --autogenerate -m "$(MSG)"
 
-# 开发服务
+# Dev
 dev:
-	cd rag-backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	cd rag-backend && . .venv/bin/activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8088
 
-worker:
-	cd rag-backend && celery -A app.workers.celery_app worker -l info -Q ingestion,default -c 4
-
-beat:
-	cd rag-backend && celery -A app.workers.celery_app beat -l info
-
-# 前端
 frontend:
 	cd rag-frontend && npm run dev
 
-# 测试
+# Tests
 test:
-	cd rag-backend && pytest tests/ -x --tb=short
+	cd rag-backend && . .venv/bin/activate && pytest tests/ -x --tb=short
 
 test-unit:
-	cd rag-backend && pytest tests/unit/ -x --tb=short --cov=app --cov-report=term-missing
+	cd rag-backend && . .venv/bin/activate && pytest tests/unit/ -x --tb=short --cov=app --cov-report=term-missing
 
-test-integration:
-	cd rag-backend && pytest tests/integration/ -x --tb=short
-
-test-e2e:
-	cd rag-backend && pytest tests/e2e/ -x --tb=short
-
-# 代码质量
+# Quality
 lint:
-	cd rag-backend && ruff check app/ tests/
+	cd rag-backend && . .venv/bin/activate && ruff check app/ tests/
 
 fmt:
-	cd rag-backend && ruff format app/ tests/
+	cd rag-backend && . .venv/bin/activate && ruff format app/ tests/
 
 typecheck:
-	cd rag-backend && mypy app/ --ignore-missing-imports
+	cd rag-backend && . .venv/bin/activate && mypy app/ --ignore-missing-imports
 
-# 清理
+# Cleanup
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
