@@ -9,12 +9,12 @@ _ENC = tiktoken.get_encoding("cl100k_base")
 class Chunk:
     chunk_index: int
     content: str
-    page_num: int
+    page_num: int | None
     token_count: int
 
 
 def chunk_page(
-    text: str, page_num: int, chunk_size: int = 512, overlap: int = 64
+    text: str, page_num: int | None, chunk_size: int = 512, overlap: int = 64
 ) -> list[Chunk]:
     text = text.strip()
     if not text:

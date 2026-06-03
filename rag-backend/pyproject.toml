@@ -21,8 +21,14 @@ dependencies = [
     "anthropic>=0.40.0",
     "tiktoken>=0.8.0",
 
-    # Document Parsing (M1: PDF only)
+    # Document Parsing
     "pypdf>=5.1.0",
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
+    "openpyxl>=3.1.5",
+
+    # Retrieval rerank
+    "cohere>=5.13.0",
 
     # Observability
     "structlog>=24.4.0",
