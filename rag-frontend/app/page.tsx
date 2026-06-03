@@ -32,27 +32,73 @@ export default function ChatPage() {
     setError(null);
     setLoading(true);
 
-    const userMsg: Message = { role: "user", content: trimmed };
-    setMessages((m) => [...m, userMsg]);
+    // user message
+    setMessages((m) => [...m, { role: "user", content: trimmed }]);
+    // placeholder assistant; will fill via SSE
+    setMessages((m) => [...m, { role: "assistant", content: "", citations: [] }]);
     setInput("");
 
     try {
-      const res = await fetch(`${API}/chat`, {
+      const res = await fetch(`${API}/chat/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
         body: JSON.stringify({ session_id: sessionId, message: trimmed }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setSessionId(data.session_id);
-      setMessages((m) => [
-        ...m,
-        {
-          role: "assistant",
-          content: data.answer,
-          citations: data.citations,
-        },
-      ]);
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const appendDelta = (delta: string) => {
+        setMessages((m) => {
+          const next = [...m];
+          const last = next[next.length - 1];
+          next[next.length - 1] = { ...last, content: (last.content || "") + delta };
+          return next;
+        });
+      };
+      const setCitations = (citations: Citation[]) => {
+        setMessages((m) => {
+          const next = [...m];
+          next[next.length - 1] = { ...next[next.length - 1], citations };
+          return next;
+        });
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let sep;
+        while ((sep = buffer.indexOf("\n\n")) >= 0) {
+          const raw = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          const evMatch = raw.match(/^event:\s*(.+)$/m);
+          const dataMatch = raw.match(/^data:\s*(.+)$/m);
+          if (!evMatch || !dataMatch) continue;
+          const event = evMatch[1].trim();
+          let data: any;
+          try {
+            data = JSON.parse(dataMatch[1]);
+          } catch {
+            continue;
+          }
+          if (event === "session") {
+            setSessionId(data.session_id);
+          } else if (event === "text") {
+            appendDelta(data.delta);
+          } else if (event === "citations") {
+            setCitations(data.citations);
+          } else if (event === "error") {
+            throw new Error(data.message || "stream error");
+          }
+        }
+      }
     } catch (e: any) {
       console.error(e);
       setError("服务暂时无响应，请稍后再试。");
@@ -65,7 +111,10 @@ export default function ChatPage() {
     <>
       {messages.length === 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
-          <p>👋 把企业内部 PDF 传到 <Link href="/documents">文档</Link>，然后在下方提问。</p>
+          <p>
+            👋 把企业内部文档（PDF / Word / PPT / Excel）传到{" "}
+            <Link href="/documents">文档</Link>，然后在下方提问。
+          </p>
           <p className="muted" style={{ marginTop: 6 }}>
             每个回答会标注 <code>[1] [2]</code> 引用，对应原文页码可追溯。
           </p>
@@ -75,7 +124,7 @@ export default function ChatPage() {
       <div className="messages">
         {messages.map((m, i) => (
           <div key={i} className={`message message-${m.role}`}>
-            <div>{m.content}</div>
+            <div>{m.content || (loading && i === messages.length - 1 ? "思考中..." : "")}</div>
             {m.citations && m.citations.length > 0 && (
               <div style={{ marginTop: 10 }}>
                 {m.citations.map((c, idx) => (
@@ -89,7 +138,6 @@ export default function ChatPage() {
             )}
           </div>
         ))}
-        {loading && <div className="muted">思考中...</div>}
         {error && <div className="error">{error}</div>}
       </div>
 
@@ -102,7 +150,14 @@ export default function ChatPage() {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send();
           }}
         />
-        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           <span className="muted">Cmd/Ctrl+Enter 发送</span>
           <button onClick={send} disabled={loading || !input.trim()}>
             {loading ? "..." : "发送"}
