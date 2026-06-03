@@ -1,11 +1,16 @@
+import logging
 from dataclasses import dataclass
+from functools import lru_cache
 
+import cohere
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Chunk, Document
 from app.services.embedding_service import embed_query
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -15,13 +20,17 @@ class RetrievedChunk:
     filename: str
     page_num: int | None
     content: str
-    score: float  # 余弦相似度，越大越相关
+    score: float  # cosine similarity OR rerank relevance (depends on path)
 
 
-def retrieve(db: Session, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
-    top_k = top_k or get_settings().top_k
-    q_vec = embed_query(query)
+@lru_cache
+def _cohere_client():
+    return cohere.ClientV2(api_key=get_settings().cohere_api_key)
 
+
+def _cosine_candidates(
+    db: Session, q_vec: list[float], limit: int
+) -> list[RetrievedChunk]:
     stmt = (
         select(
             Chunk.id,
@@ -33,7 +42,7 @@ def retrieve(db: Session, query: str, top_k: int | None = None) -> list[Retrieve
         )
         .join(Document, Document.id == Chunk.document_id)
         .order_by(Chunk.embedding.cosine_distance(q_vec))
-        .limit(top_k)
+        .limit(limit)
     )
     rows = db.execute(stmt).all()
     return [
@@ -47,3 +56,50 @@ def retrieve(db: Session, query: str, top_k: int | None = None) -> list[Retrieve
         )
         for r in rows
     ]
+
+
+def _rerank_with_cohere(
+    query: str, candidates: list[RetrievedChunk], top_n: int
+) -> list[RetrievedChunk]:
+    settings = get_settings()
+    resp = _cohere_client().rerank(
+        model=settings.cohere_rerank_model,
+        query=query,
+        documents=[c.content for c in candidates],
+        top_n=top_n,
+    )
+    out: list[RetrievedChunk] = []
+    for r in resp.results:
+        original = candidates[r.index]
+        out.append(
+            RetrievedChunk(
+                chunk_id=original.chunk_id,
+                doc_id=original.doc_id,
+                filename=original.filename,
+                page_num=original.page_num,
+                content=original.content,
+                score=float(r.relevance_score),
+            )
+        )
+    return out
+
+
+def retrieve(db: Session, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
+    settings = get_settings()
+    top_k = top_k or settings.top_k
+
+    q_vec = embed_query(query)
+
+    # If Cohere is configured, oversample → rerank; else pure cosine
+    use_rerank = bool(settings.cohere_api_key)
+    candidate_n = settings.retrieval_candidate_k if use_rerank else top_k
+    candidates = _cosine_candidates(db, q_vec, limit=candidate_n)
+
+    if not use_rerank or len(candidates) <= top_k:
+        return candidates[:top_k]
+
+    try:
+        return _rerank_with_cohere(query, candidates, top_n=top_k)
+    except Exception as e:
+        logger.warning("cohere rerank failed, fallback to cosine: %s", e)
+        return candidates[:top_k]

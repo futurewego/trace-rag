@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     chunk_size_tokens: int = 512
     chunk_overlap_tokens: int = 64
     top_k: int = 5
+    retrieval_candidate_k: int = 20  # cosine 召回数，重排前
+
+    # Cohere Rerank (optional)
+    cohere_api_key: str = Field("", alias="COHERE_API_KEY")
+    cohere_rerank_model: str = Field(
+        "rerank-multilingual-v3.0", alias="COHERE_RERANK_MODEL"
+    )
 
 
 @lru_cache
