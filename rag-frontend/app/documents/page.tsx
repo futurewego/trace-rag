@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const API =
-  process.env.NEXT_PUBLIC_RAG_BACKEND_URL || "http://localhost:8088";
+const API = "/api/backend";
 
 type Doc = {
   id: number;
