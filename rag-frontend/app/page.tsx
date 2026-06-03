@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 const API = "/api/backend";
@@ -36,7 +37,7 @@ export default function ChatPage() {
     setInput("");
 
     try {
-      const res = await fetch(`${API}/api/v1/chat`, {
+      const res = await fetch(`${API}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId, message: trimmed }),
@@ -53,7 +54,8 @@ export default function ChatPage() {
         },
       ]);
     } catch (e: any) {
-      setError(e.message || "请求失败");
+      console.error(e);
+      setError("服务暂时无响应，请稍后再试。");
     } finally {
       setLoading(false);
     }
@@ -61,10 +63,14 @@ export default function ChatPage() {
 
   return (
     <>
-      <h2 style={{ marginBottom: 12 }}>Chat</h2>
-      <p className="muted" style={{ marginBottom: 20 }}>
-        Backend: {API} {sessionId ? `· session ${sessionId}` : ""}
-      </p>
+      {messages.length === 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <p>👋 把企业内部 PDF 传到 <Link href="/documents">文档</Link>，然后在下方提问。</p>
+          <p className="muted" style={{ marginTop: 6 }}>
+            每个回答会标注 <code>[1] [2]</code> 引用，对应原文页码可追溯。
+          </p>
+        </div>
+      )}
 
       <div className="messages">
         {messages.map((m, i) => (
@@ -76,8 +82,7 @@ export default function ChatPage() {
                   <div key={idx} className="citation">
                     <span className="citation-num">[{idx + 1}]</span>
                     {c.filename}
-                    {c.page_num ? ` · 第 ${c.page_num} 页` : ""} · score{" "}
-                    {c.score.toFixed(3)}
+                    {c.page_num ? ` · 第 ${c.page_num} 页` : ""}
                   </div>
                 ))}
               </div>
@@ -85,14 +90,14 @@ export default function ChatPage() {
           </div>
         ))}
         {loading && <div className="muted">思考中...</div>}
-        {error && <div className="error">错误: {error}</div>}
+        {error && <div className="error">{error}</div>}
       </div>
 
       <div className="card">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="问题（如：这份合同的违约责任如何约定？）"
+          placeholder="提问（如：这份合同的违约责任如何约定？）"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send();
           }}

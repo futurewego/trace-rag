@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "RAG MVP",
-  description: "Enterprise RAG — M1",
+  title: "知识库问答 Demo",
+  description: "上传 PDF，提问，获取带页码引用的答案",
 };
 
 export default function RootLayout({
@@ -16,10 +16,10 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body>
         <header>
-          <h1>RAG MVP</h1>
+          <h1>📚 知识库问答 Demo</h1>
           <nav>
-            <Link href="/">Chat</Link>
-            <Link href="/documents">Documents</Link>
+            <Link href="/">问答</Link>
+            <Link href="/documents">文档</Link>
           </nav>
         </header>
         <main>{children}</main>
