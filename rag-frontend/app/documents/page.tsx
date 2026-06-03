@@ -69,14 +69,14 @@ export default function DocumentsPage() {
   return (
     <>
       <div className="card" style={{ marginBottom: 16 }}>
-        <p>📁 上传企业内部 PDF。系统会自动解析、分块、生成向量索引，几十秒后即可在 <a href="/">问答</a> 页提问。</p>
+        <p>📁 上传企业内部文档（PDF / Word / PPT / Excel）。系统会自动解析、分块、生成向量索引，几十秒后即可在 <a href="/">问答</a> 页提问。</p>
       </div>
 
       <div className="card">
         <input
           ref={fileRef}
           type="file"
-          accept=".pdf"
+          accept=".pdf,.docx,.pptx,.xlsx"
           onChange={onUpload}
           disabled={uploading}
         />

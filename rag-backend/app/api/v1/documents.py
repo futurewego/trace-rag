@@ -8,8 +8,11 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.dependencies import get_db
 from app.models import Document
+from app.services.parser_service import detect_format
 
 router = APIRouter()
+
+_ALLOWED_EXT = {".pdf", ".docx", ".pptx", ".xlsx"}
 
 
 class DocumentOut(BaseModel):
@@ -30,6 +33,16 @@ def upload_document(
     db: Session = Depends(get_db),
 ) -> Document:
     settings = get_settings()
+
+    # Validate format up-front (cheap; reject before disk write)
+    try:
+        detect_format(file.content_type, file.filename)
+    except ValueError as e:
+        raise HTTPException(
+            415,
+            f"不支持的文件格式 (仅 PDF/Word/PPT/Excel): {file.filename}",
+        ) from e
+
     raw = file.file.read()
     file_hash = hashlib.sha256(raw).hexdigest()
 
