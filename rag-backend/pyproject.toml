@@ -30,6 +30,10 @@ dependencies = [
     # Retrieval rerank
     "cohere>=5.13.0",
 
+    # OCR (M3)
+    "pypdfium2>=4.30.0",
+    "alibabacloud_ocr_api20210707>=3.0.0",
+
     # Observability
     "structlog>=24.4.0",
 

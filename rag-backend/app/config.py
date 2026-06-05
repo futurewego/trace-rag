@@ -43,6 +43,14 @@ class Settings(BaseSettings):
         "rerank-multilingual-v3.0", alias="COHERE_RERANK_MODEL"
     )
 
+    # Aliyun OCR (optional; empty key = OCR disabled, falls back to M2 behavior)
+    aliyun_ocr_access_key_id: str = Field("", alias="ALIYUN_OCR_ACCESS_KEY_ID")
+    aliyun_ocr_access_key_secret: str = Field("", alias="ALIYUN_OCR_ACCESS_KEY_SECRET")
+    aliyun_ocr_endpoint: str = Field(
+        "ocr-api.cn-hangzhou.aliyuncs.com", alias="ALIYUN_OCR_ENDPOINT"
+    )
+    ocr_fallback_char_threshold: int = 50
+
 
 @lru_cache
 def get_settings() -> Settings:
