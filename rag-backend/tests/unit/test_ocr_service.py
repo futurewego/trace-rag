@@ -15,7 +15,7 @@ def _make_mock_response(content: str) -> MagicMock:
 
 @patch("app.services.ocr_service._client")
 @patch("app.services.ocr_service.ocr_enabled", return_value=True)
-def test_ocr_image_success(mock_enabled, mock_client):
+def test_ocr_image_success(mock_enabled: MagicMock, mock_client: MagicMock) -> None:
     mock_client.return_value.recognize_general_with_options.return_value = (
         _make_mock_response("hello world")
     )
@@ -28,7 +28,7 @@ def test_ocr_image_success(mock_enabled, mock_client):
 
 @patch("app.services.ocr_service._client")
 @patch("app.services.ocr_service.ocr_enabled", return_value=True)
-def test_ocr_image_api_error_wrapped(mock_enabled, mock_client):
+def test_ocr_image_api_error_wrapped(mock_enabled: MagicMock, mock_client: MagicMock) -> None:
     mock_client.return_value.recognize_general_with_options.side_effect = RuntimeError(
         "Aliyun 5xx"
     )
@@ -39,7 +39,7 @@ def test_ocr_image_api_error_wrapped(mock_enabled, mock_client):
     assert "Aliyun 5xx" in str(exc.value)
 
 
-def test_ocr_enabled_with_key(monkeypatch):
+def test_ocr_enabled_with_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ALIYUN_OCR_ACCESS_KEY_ID", "fake-id")
     monkeypatch.setenv("ALIYUN_OCR_ACCESS_KEY_SECRET", "fake-secret")
     from app.config import get_settings
@@ -49,7 +49,7 @@ def test_ocr_enabled_with_key(monkeypatch):
     get_settings.cache_clear()
 
 
-def test_ocr_enabled_without_key(monkeypatch):
+def test_ocr_enabled_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ALIYUN_OCR_ACCESS_KEY_ID", "")
     monkeypatch.setenv("ALIYUN_OCR_ACCESS_KEY_SECRET", "")
     from app.config import get_settings
