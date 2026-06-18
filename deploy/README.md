@@ -24,7 +24,7 @@ docker compose -f docker-compose.prod.yml logs -f --tail=100
 # 本地：commit + 打 tar
 tar --exclude='.git' --exclude='.venv' --exclude='node_modules' \
     --exclude='.next' --exclude='uploads/*' \
-    -czf /tmp/rag.tar.gz -C /Users/marvin/Desktop/ai_workspaces/test_rag .
+    -czf /tmp/rag.tar.gz -C /Users/marvin/Desktop/ai_workspaces/trace-rag .
 scp /tmp/rag.tar.gz root@<server>:/opt/rag/
 
 # 服务器：
