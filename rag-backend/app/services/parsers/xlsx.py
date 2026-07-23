@@ -29,6 +29,7 @@ def parse_xlsx(source: bytes | str | Path) -> list[dict]:
                 "text": f"[Sheet: {sheet_name}]\n{body}",
                 "kind": "sheet",
                 "parse_confidence": 0.95,
+                "section_path": [sheet_name],
             })
     wb.close()
     return chunks

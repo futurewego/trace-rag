@@ -16,6 +16,9 @@ def parse_pptx(source: bytes | str | Path) -> list[dict]:
 
     chunks: list[dict] = []
     for i, slide in enumerate(prs.slides, start=1):
+        title = ""
+        if slide.shapes.title is not None and slide.shapes.title.has_text_frame:
+            title = (slide.shapes.title.text or "").strip()
         parts: list[str] = []
         for shape in slide.shapes:
             if shape.has_text_frame:
@@ -29,5 +32,9 @@ def parse_pptx(source: bytes | str | Path) -> list[dict]:
                 parts.append(f"[备注] {notes}")
         text = "\n".join(parts).strip()
         if text:
-            chunks.append({"page_num": i, "text": text, "kind": "slide", "parse_confidence": 0.95})
+            chunks.append({
+                "page_num": i, "text": text, "kind": "slide",
+                "parse_confidence": 0.95,
+                "section_path": [title] if title else [],
+            })
     return chunks

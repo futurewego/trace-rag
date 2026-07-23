@@ -68,7 +68,10 @@ def parse_pdf(source: bytes | str | Path) -> list[dict]:
                 text = ""
 
         if text:
-            pages.append({"page_num": i, "text": text, "kind": "page", "parse_confidence": confidence})
+            pages.append({
+                "page_num": i, "text": text, "kind": "page",
+                "parse_confidence": confidence, "section_path": [],
+            })
 
     # A document that yielded zero content *because every OCR call failed* is an
     # ingestion failure, not an empty document. Raising here lets the caller mark
