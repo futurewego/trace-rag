@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -24,6 +24,12 @@ class Document(Base, TimestampMixin):
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    doc_version: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
+    is_latest: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("true"), nullable=False
+    )
+    doc_group_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    knowledge_base_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     chunks: Mapped[list[Chunk]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
