@@ -28,10 +28,8 @@ def _cohere_client():
     return cohere.ClientV2(api_key=get_settings().cohere_api_key)
 
 
-def _cosine_candidates(
-    db: Session, q_vec: list[float], limit: int
-) -> list[RetrievedChunk]:
-    stmt = (
+def _candidates_stmt(q_vec: list[float], limit: int):
+    return (
         select(
             Chunk.id,
             Chunk.document_id,
@@ -41,9 +39,16 @@ def _cosine_candidates(
             (1 - Chunk.embedding.cosine_distance(q_vec)).label("score"),
         )
         .join(Document, Document.id == Chunk.document_id)
+        .where(Chunk.is_latest)
         .order_by(Chunk.embedding.cosine_distance(q_vec))
         .limit(limit)
     )
+
+
+def _cosine_candidates(
+    db: Session, q_vec: list[float], limit: int
+) -> list[RetrievedChunk]:
+    stmt = _candidates_stmt(q_vec, limit)
     rows = db.execute(stmt).all()
     return [
         RetrievedChunk(
