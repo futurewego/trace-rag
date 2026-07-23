@@ -165,3 +165,22 @@
 - [ ] 检索加 `is_latest` 过滤，默认行为与今天一致
 - [ ] 全套单测通过（22 现存 + 新增，全绿）
 - [ ] `ruff check` 改动文件干净
+
+---
+
+## 12. 最终评审留后项（P2 / P4 跟踪）
+
+整分支最终评审（opus，`503b6b3..b8310d2`）判定 **Ready to merge**，无 Critical / Important。以下 Minor / 延后项已记录：
+
+**P4（版本翻转时必须处理）**
+- ⚠️ **`is_latest` 是后过滤不是预过滤**：把 `is_latest` 放 chunks 上原意为「HNSW 预过滤、免 join」，但 pgvector HNSW 实为「先走图再丢弃非匹配行」。一旦 P4 让 `is_latest` 有选择性，`ORDER BY embedding <=> q WHERE is_latest LIMIT k` 可能返回 **< k**。P4 必须加**部分 HNSW 索引 `USING hnsw (embedding vector_cosine_ops) WHERE is_latest`**（或 pgvector ≥0.8 的 iterative scan）。当前全 true 时是真 no-op，本期无需改。§3.1/§7 的「HNSW 预过滤」措辞据此修正。
+- 现有普通 btree `ix_chunks_is_latest` 对全 true 布尔无用且增写开销；P4 用上面的部分 HNSW 索引替代。
+
+**P2（消费这些字段时收紧）**
+- docx `section_path` 测试需 3 级/兄弟标题 fixture 才能覆盖 `[:level-1]` off-by-one 与 `max(level,1)` 守卫。
+- `test_build_chunk_rows_kind_defaults_to_text` 改用真正未映射的 `kind="unknown"` 才真正测到 `.get(..., "text")` 回退。
+- `chunk_page` 每 unit 重置 `chunk_index` → 多 unit 文档 `chunk_index` 跨 unit 重复；P2 决定其是否改为全局序或退役，并考虑 `UNIQUE(document_id, chunk_index)`。
+
+**独立技术债（非 P1a 引入）**
+- ORM↔迁移漂移：`Chunk(TimestampMixin)` 声明 `updated_at`，但迁移 002/003 从未在 `chunks` 建该列（`documents` 有）。潜伏（无处 full-load Chunk 实体）。建议加 **alembic autogenerate 一致性测试**（应产空 diff）守护 ORM↔迁移，并补 `chunks.updated_at`。
+- 仓库既有 lint 债（base.py UP017、死代码 knowledge_base.py、`_db_scope`/`_cohere_client` ANN202、docx.py:14 SIM108）在 P1a 改动文件之外，留独立清理。

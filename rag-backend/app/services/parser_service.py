@@ -1,6 +1,7 @@
 """Mime-type dispatcher for document parsers.
 
-Returns: list[dict] with keys page_num (int|None), text (str), kind (str).
+Returns: list[dict] with keys page_num (int|None), text (str), kind (str),
+parse_confidence (float), section_path (list[str]).
 Subclass-specific kinds:
   - pdf:   kind='page',    page_num=1-based page number
   - pptx:  kind='slide',   page_num=1-based slide number
