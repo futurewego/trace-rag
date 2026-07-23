@@ -49,13 +49,16 @@ def test_migration_003_roundtrip(pg, monkeypatch):
     cfg.set_main_option("sqlalchemy.url", url)
     engine = create_engine(url)
 
-    command.upgrade(cfg, "head")
-
+    # Pre-P1a schema + a legacy row (documents has no doc_group_id column yet).
+    command.upgrade(cfg, "002_m1_schema")
     with engine.begin() as c:
         c.execute(sa_text(
             "INSERT INTO documents (filename, file_hash, file_path, file_size, status, chunk_count)"
             " VALUES ('a.pdf','h1','/tmp/a.pdf',10,'indexed',0)"
         ))
+
+    # Apply P1a — additive migration backfills doc_group_id = id for existing rows.
+    command.upgrade(cfg, "head")
 
     assert {"doc_version", "is_latest", "doc_group_id", "knowledge_base_id"} <= _cols(
         engine, "documents"
@@ -70,7 +73,7 @@ def test_migration_003_roundtrip(pg, monkeypatch):
         r = c.execute(sa_text(
             "SELECT id, doc_group_id, doc_version, is_latest FROM documents"
         )).fetchone()
-    assert r.doc_group_id == r.id
+    assert r.doc_group_id == r.id  # backfill on the pre-existing row
     assert r.doc_version == 1
     assert r.is_latest is True
 

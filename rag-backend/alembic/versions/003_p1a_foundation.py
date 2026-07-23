@@ -33,30 +33,6 @@ def upgrade() -> None:
     op.create_index("ix_documents_doc_group_id", "documents", ["doc_group_id"])
     op.create_index("ix_documents_is_latest", "documents", ["is_latest"])
 
-    # doc_group_id defaults to self (new document = new version lineage) but stays
-    # overridable — inserting a new version of an existing group sets it explicitly.
-    # A plain server_default can't express "= own id" so a BEFORE INSERT trigger
-    # fills it in only when the caller left it NULL.
-    op.execute(
-        """
-        CREATE OR REPLACE FUNCTION set_documents_doc_group_id() RETURNS trigger AS $$
-        BEGIN
-            IF NEW.doc_group_id IS NULL THEN
-                NEW.doc_group_id := NEW.id;
-            END IF;
-            RETURN NEW;
-        END;
-        $$ LANGUAGE plpgsql
-        """
-    )
-    op.execute(
-        """
-        CREATE TRIGGER trg_documents_doc_group_id_default
-        BEFORE INSERT ON documents
-        FOR EACH ROW EXECUTE FUNCTION set_documents_doc_group_id()
-        """
-    )
-
     # parent_chunks (empty until P2)
     op.create_table(
         "parent_chunks",
@@ -69,7 +45,10 @@ def upgrade() -> None:
         sa.Column("section_path", postgresql.ARRAY(sa.Text), nullable=True),
         sa.Column("page_num", sa.Integer, nullable=True),
         sa.Column("token_count", sa.Integer, nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(), nullable=False,
+        ),
     )
     op.create_index("ix_parent_chunks_document_id", "parent_chunks", ["document_id"])
 
@@ -96,9 +75,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS trg_documents_doc_group_id_default ON documents")
-    op.execute("DROP FUNCTION IF EXISTS set_documents_doc_group_id()")
-
     op.drop_index("ix_chunks_parent_chunk_id", table_name="chunks")
     op.drop_index("ix_chunks_is_latest", table_name="chunks")
     op.drop_constraint("fk_chunks_parent_chunk_id", "chunks", type_="foreignkey")
