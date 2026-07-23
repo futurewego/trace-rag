@@ -43,6 +43,8 @@ def parse_pdf(source: bytes | str | Path) -> list[dict]:
         reader = PdfReader(str(source))
 
     pages: list[dict] = []
+    ocr_errors = 0
+    last_ocr_error: str | None = None
     for i, page in enumerate(reader.pages, start=1):
         text = (page.extract_text() or "").strip()
 
@@ -51,7 +53,13 @@ def parse_pdf(source: bytes | str | Path) -> list[dict]:
                 img_bytes = _render_page_to_image(source, i - 1)
                 text = (ocr_image(img_bytes) or "").strip()
             except OcrError as e:
-                logger.warning("OCR fail page=%d: %s", i, e)
+                # OCR call rejected (bad key / RAM policy / region / throttle /
+                # quota / timeout). Log at ERROR so a misconfigured key is visible,
+                # and remember it: if it turns out the whole document produced no
+                # content, we must fail loudly rather than report a false success.
+                logger.error("OCR fail page=%d: %s", i, e)
+                ocr_errors += 1
+                last_ocr_error = str(e)
                 text = ""
             except Exception as e:
                 logger.warning("PDF render fail page=%d: %s", i, e)
@@ -59,4 +67,15 @@ def parse_pdf(source: bytes | str | Path) -> list[dict]:
 
         if text:
             pages.append({"page_num": i, "text": text, "kind": "page"})
+
+    # A document that yielded zero content *because every OCR call failed* is an
+    # ingestion failure, not an empty document. Raising here lets the caller mark
+    # the doc status="failed" (with the Aliyun error) instead of a silent
+    # status="indexed"/0-chunk success. Partial failures (some pages recovered)
+    # still succeed — single-page failures must not block the whole document.
+    if not pages and ocr_errors:
+        raise OcrError(
+            f"all {ocr_errors} scanned page(s) failed OCR; last error: {last_ocr_error}"
+        )
+
     return pages

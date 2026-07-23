@@ -48,8 +48,13 @@ def ocr_image(image_bytes: bytes) -> str:
     if not ocr_enabled():
         raise OcrError("OCR not enabled (Aliyun key missing)")
 
+    # A single io.BytesIO is safe only because autoretry is off. If retries are
+    # ever enabled on RuntimeOptions, the stream would be re-read at EOF and an
+    # empty body signed/sent — recreate the BytesIO per attempt in that case.
     request = ocr_models.RecognizeGeneralRequest(body=io.BytesIO(image_bytes))
-    runtime = RuntimeOptions()
+    # Explicit timeouts (ms) so a slow/hung call cannot stall ingestion; these
+    # match Tea's 5s/10s defaults, surfaced here on purpose.
+    runtime = RuntimeOptions(connect_timeout=5000, read_timeout=10000)
     try:
         resp = _client().recognize_general_with_options(request, runtime)
         data = json.loads(resp.body.data) if resp.body.data else {}
