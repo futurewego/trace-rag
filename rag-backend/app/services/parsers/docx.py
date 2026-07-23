@@ -23,13 +23,13 @@ def parse_docx(source: bytes | str | Path) -> list[dict]:
 
     for para in paragraphs:
         if buf_len + len(para) > _TARGET_CHARS and buf:
-            sections.append({"page_num": None, "text": "\n".join(buf), "kind": "section"})
+            sections.append({"page_num": None, "text": "\n".join(buf), "kind": "section", "parse_confidence": 0.95})
             buf = []
             buf_len = 0
         buf.append(para)
         buf_len += len(para)
 
     if buf:
-        sections.append({"page_num": None, "text": "\n".join(buf), "kind": "section"})
+        sections.append({"page_num": None, "text": "\n".join(buf), "kind": "section", "parse_confidence": 0.95})
 
     return sections

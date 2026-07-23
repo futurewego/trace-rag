@@ -29,5 +29,5 @@ def parse_pptx(source: bytes | str | Path) -> list[dict]:
                 parts.append(f"[备注] {notes}")
         text = "\n".join(parts).strip()
         if text:
-            chunks.append({"page_num": i, "text": text, "kind": "slide"})
+            chunks.append({"page_num": i, "text": text, "kind": "slide", "parse_confidence": 0.95})
     return chunks

@@ -47,11 +47,13 @@ def parse_pdf(source: bytes | str | Path) -> list[dict]:
     last_ocr_error: str | None = None
     for i, page in enumerate(reader.pages, start=1):
         text = (page.extract_text() or "").strip()
+        confidence = 0.9
 
         if len(text) < threshold and use_ocr:
             try:
                 img_bytes = _render_page_to_image(source, i - 1)
                 text = (ocr_image(img_bytes) or "").strip()
+                confidence = 0.6
             except OcrError as e:
                 # OCR call rejected (bad key / RAM policy / region / throttle /
                 # quota / timeout). Log at ERROR so a misconfigured key is visible,
@@ -66,7 +68,7 @@ def parse_pdf(source: bytes | str | Path) -> list[dict]:
                 text = ""
 
         if text:
-            pages.append({"page_num": i, "text": text, "kind": "page"})
+            pages.append({"page_num": i, "text": text, "kind": "page", "parse_confidence": confidence})
 
     # A document that yielded zero content *because every OCR call failed* is an
     # ingestion failure, not an empty document. Raising here lets the caller mark

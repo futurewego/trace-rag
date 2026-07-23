@@ -28,6 +28,7 @@ def parse_xlsx(source: bytes | str | Path) -> list[dict]:
                 "page_num": i,
                 "text": f"[Sheet: {sheet_name}]\n{body}",
                 "kind": "sheet",
+                "parse_confidence": 0.95,
             })
     wb.close()
     return chunks
