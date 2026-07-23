@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import cohere
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -28,7 +28,7 @@ def _cohere_client():
     return cohere.ClientV2(api_key=get_settings().cohere_api_key)
 
 
-def _candidates_stmt(q_vec: list[float], limit: int):
+def _candidates_stmt(q_vec: list[float], limit: int) -> Select:
     return (
         select(
             Chunk.id,

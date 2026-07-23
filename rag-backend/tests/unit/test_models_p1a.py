@@ -25,5 +25,8 @@ def test_document_has_versioning_columns():
 def test_parent_chunk_model():
     assert ParentChunk.__tablename__ == "parent_chunks"
     cols = ParentChunk.__table__.columns
-    for c in ("id", "document_id", "content", "section_path", "page_num", "token_count", "created_at"):
+    for c in (
+        "id", "document_id", "content", "section_path", "page_num",
+        "token_count", "created_at"
+    ):
         assert c in cols, f"missing parent_chunks.{c}"

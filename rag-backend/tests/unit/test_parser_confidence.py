@@ -10,7 +10,11 @@ FX = Path(__file__).parent / "fixtures"
 
 
 def test_native_xml_parsers_confidence_095():
-    for parse, fx in [(parse_docx, "tiny.docx"), (parse_xlsx, "tiny.xlsx"), (parse_pptx, "tiny.pptx")]:
+    for parse, fx in [
+        (parse_docx, "tiny.docx"),
+        (parse_xlsx, "tiny.xlsx"),
+        (parse_pptx, "tiny.pptx"),
+    ]:
         units = parse(FX / fx)
         assert units and all(u["parse_confidence"] == 0.95 for u in units)
 
