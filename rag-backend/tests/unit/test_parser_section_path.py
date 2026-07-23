@@ -14,16 +14,18 @@ def test_docx_section_path_from_headings(tmp_path):
 
     d = D()
     d.add_heading("第一章 总则", level=1)
-    d.add_paragraph("本章规定了适用范围与基本原则。")
+    d.add_paragraph("本章规定了适用范围与基本原则。" * 200)  # >2000 chars -> forces a flush
     d.add_heading("1.1 定义", level=2)
-    d.add_paragraph("本合同中的术语含义如下。")
+    d.add_paragraph("本合同中的术语含义如下。" * 200)  # another section, now under L1 > L2
     f = tmp_path / "h.docx"
     d.save(f)
 
     units = parse_docx(f)
     assert units
     assert all(isinstance(u["section_path"], list) for u in units)
-    assert any("第一章 总则" in u["section_path"] for u in units)
+    paths = [u["section_path"] for u in units]
+    assert ["第一章 总则"] in paths                    # section under level-1 only
+    assert ["第一章 总则", "1.1 定义"] in paths          # breadcrumb under level-1 > level-2
 
 
 def test_xlsx_section_path_is_sheet_name():
@@ -35,7 +37,10 @@ def test_xlsx_section_path_is_sheet_name():
 
 def test_pptx_section_path_is_list():
     units = parse_pptx(FX / "tiny.pptx")
+    assert units
     assert all(isinstance(u["section_path"], list) for u in units)
+    # tiny.pptx slides carry titles -> at least one section_path is a non-empty single title
+    assert any(len(u["section_path"]) == 1 and u["section_path"][0].strip() for u in units)
 
 
 @patch("app.services.parsers.pdf.PdfReader")

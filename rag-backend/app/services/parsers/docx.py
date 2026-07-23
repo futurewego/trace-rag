@@ -30,7 +30,7 @@ def parse_docx(source: bytes | str | Path) -> list[dict]:
         style = (p.style.name or "") if p.style is not None else ""
         if style.startswith("Heading"):
             try:
-                level = int(style.split()[-1])
+                level = max(int(style.split()[-1]), 1)
             except (ValueError, IndexError):
                 level = 1
             heading_stack[:] = heading_stack[: level - 1]
