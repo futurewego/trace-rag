@@ -59,3 +59,26 @@ def test_large_table_is_row_grouped_with_header_repeated():
     cap = get_settings().table_max_tokens
     assert all(c.token_count <= cap for c in children)
     assert all(header in c.content for c in children)
+
+
+def test_single_line_table_over_cap_is_not_dropped():
+    """整表挤在一行且超上限时，不得静默丢弃整个 unit。"""
+    text = "列A\t列B\t" + "长文本内容" * 400
+    groups = chunk_unit(text, page_num=1, chunk_type="table")
+    assert groups, "over-cap single-line table must not vanish"
+    children = [c for g in groups for c in g.children]
+    assert children
+    cap = get_settings().table_max_tokens
+    assert all(c.token_count <= cap for c in children)
+
+
+def test_single_oversized_row_is_split_with_header_repeated():
+    """单行(含表头)就超上限时，必须切分而不是产出超限块，且每片仍带表头。"""
+    header = "订单号\t备注"
+    long_row = "HT-1\t" + "很长的自由文本备注" * 500
+    groups = chunk_unit(f"{header}\n{long_row}", page_num=1, chunk_type="table")
+    children = [c for g in groups for c in g.children]
+    assert len(children) > 1
+    cap = get_settings().table_max_tokens
+    assert all(c.token_count <= cap for c in children)
+    assert all(header in c.content for c in children)

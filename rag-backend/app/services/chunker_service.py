@@ -113,6 +113,32 @@ def _split_to_children(text: str, max_tokens: int, overlap: int) -> list[str]:
     return [p for p in pieces if p.strip()]
 
 
+def _split_oversized_row(header: str, row: str, cap: int) -> list[str]:
+    """单行数据本身（连同表头）就超过 cap 时，对这一行做定长窗口切分，
+    每片重新拼上表头，保证不产出超限块。
+
+    先用「cap - 表头 token 数」的近似预算切窗口，再对每片**实际拼接后**的
+    字符串重新计数——BPE 在表头/数据拼接处的边界效应可能让近似预算仍然
+    超限，这时就收紧预算重切这一片，直到实测不超限为止。
+    """
+    header_tokens = count_tokens(header)
+    budget = max(1, cap - header_tokens - 1)
+    row_tokens = _ENC.encode(row)
+    out: list[str] = []
+    pos = 0
+    while pos < len(row_tokens):
+        size = min(budget, len(row_tokens) - pos)
+        piece = _ENC.decode(row_tokens[pos : pos + size])
+        candidate = "\n".join([header, piece])
+        while count_tokens(candidate) > cap and size > 1:
+            size -= 1
+            piece = _ENC.decode(row_tokens[pos : pos + size])
+            candidate = "\n".join([header, piece])
+        out.append(candidate)
+        pos += size
+    return out
+
+
 def _split_table(text: str, cap: int) -> list[str]:
     """表格：整体不超限则整块；超限则按行分组并在每组重复表头。
 
@@ -125,10 +151,22 @@ def _split_table(text: str, cap: int) -> list[str]:
     lines = [ln for ln in text.split("\n") if ln.strip()]
     if not lines:
         return []
+    if len(lines) == 1:
+        # 整表挤在一行（没有换行）或只有表头一行：没有「表头 + 数据行」的
+        # 结构可分组，退化为定长 token 窗口切分，避免静默丢弃整个表格。
+        return _window_tokens(text, cap, 0)
     header = lines[0]
     out: list[str] = []
     buf: list[str] = []
     for row in lines[1:]:
+        # 这一行单独（连同表头）就已经超过 cap：无论 buf 是否为空都要特殊处理，
+        # 否则 buf 为空时旧逻辑会无条件放行，产出一个超限块。
+        if count_tokens("\n".join([header, row])) > cap:
+            if buf:
+                out.append("\n".join([header, *buf]))
+                buf = []
+            out.extend(_split_oversized_row(header, row, cap))
+            continue
         candidate = "\n".join([header, *buf, row])
         if buf and count_tokens(candidate) > cap:
             out.append("\n".join([header, *buf]))
@@ -171,7 +209,7 @@ def chunk_unit(
     # 分组判定同样必须用**实际拼接后**的 token 数，理由同 _split_table：逐子块
     # token 数之和是近似值，用 "\n\n" 拼接后重新编码可能比求和更多（英文/数字内容更明显），
     # 求和判定会让真正拼出来的父块超过 parent_chunk_tokens。
-    groups: list[ParentGroup] = []
+    groups = []
     buf: list[ChildChunk] = []
     for ct in child_texts:
         tc = count_tokens(ct)
