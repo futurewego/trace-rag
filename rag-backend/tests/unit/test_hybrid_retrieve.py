@@ -57,3 +57,21 @@ def test_low_scores_survive_without_cohere(mock_embed, mock_dense, mock_sparse, 
 
     assert {c.chunk_id for c in out} == {1, 2}
     get_settings.cache_clear()
+
+
+@patch(
+    "app.services.retrieval_service._sparse_candidates",
+    side_effect=RuntimeError("zh config missing"),
+)
+@patch("app.services.retrieval_service._cosine_candidates")
+@patch("app.services.retrieval_service.embed_query", return_value=[0.0] * 1536)
+def test_sparse_failure_degrades_to_dense(mock_embed, mock_dense, mock_sparse, monkeypatch):
+    """稀疏不可用（如未跑迁移 004）必须降级为纯稠密，而不是整个查询失败。"""
+    monkeypatch.setenv("COHERE_API_KEY", "")
+    get_settings.cache_clear()
+    mock_dense.return_value = [_rc(1, 0.9), _rc(2, 0.8)]
+
+    out = retrieve(MagicMock(), "合同编号", top_k=5)
+
+    assert [c.chunk_id for c in out] == [1, 2]
+    get_settings.cache_clear()

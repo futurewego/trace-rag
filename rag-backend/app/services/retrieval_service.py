@@ -231,13 +231,27 @@ def retrieve(db: Session, query: str, top_k: int | None = None) -> list[Retrieve
     # Hybrid: fuse dense with zhparser sparse hits by RANK (scores are not
     # comparable across the two retrievers). Either side may be empty.
     if settings.enable_sparse:
-        sparse = _sparse_candidates(db, query, limit=settings.sparse_candidate_k)
-        candidates = _rrf_fuse(
-            dense, sparse,
-            k=settings.rrf_k,
-            dense_w=settings.rrf_dense_weight,
-            sparse_w=settings.rrf_sparse_weight,
-        )
+        try:
+            sparse = _sparse_candidates(db, query, limit=settings.sparse_candidate_k)
+            candidates = _rrf_fuse(
+                dense, sparse,
+                k=settings.rrf_k,
+                dense_w=settings.rrf_dense_weight,
+                sparse_w=settings.rrf_sparse_weight,
+            )
+        except Exception as e:
+            # Sparse needs the 'zh' text-search config from migration 004 (custom
+            # pg-zhparser image). If it is unavailable, degrade to dense-only
+            # rather than failing the whole query — same posture as the rerank
+            # fallback below.
+            #
+            # rollback() matters: a real Postgres error here (e.g. undefined 'zh'
+            # config) leaves the DBAPI transaction aborted, which would otherwise
+            # break the caller's later db.execute() in assemble_context() and the
+            # final db.commit() in dependencies.get_db().
+            db.rollback()
+            logger.warning("sparse retrieval failed, falling back to dense: %s", e)
+            candidates = dense
     else:
         candidates = dense
 
