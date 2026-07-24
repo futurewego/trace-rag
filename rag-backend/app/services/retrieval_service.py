@@ -245,11 +245,13 @@ def retrieve(db: Session, query: str, top_k: int | None = None) -> list[Retrieve
             # rather than failing the whole query — same posture as the rerank
             # fallback below.
             #
-            # rollback() matters: a real Postgres error here (e.g. undefined 'zh'
-            # config) leaves the DBAPI transaction aborted, which would otherwise
-            # break the caller's later db.execute() in assemble_context() and the
-            # final db.commit() in dependencies.get_db().
-            db.rollback()
+            # Clear the aborted transaction so the later assemble_context() query
+            # and get_db()'s end-of-request commit still work. A rollback failure
+            # (dead connection) must not defeat the fallback itself.
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                logger.exception("rollback after sparse failure also failed")
             logger.warning("sparse retrieval failed, falling back to dense: %s", e)
             candidates = dense
     else:

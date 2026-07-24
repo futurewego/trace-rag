@@ -70,8 +70,10 @@ def test_sparse_failure_degrades_to_dense(mock_embed, mock_dense, mock_sparse, m
     monkeypatch.setenv("COHERE_API_KEY", "")
     get_settings.cache_clear()
     mock_dense.return_value = [_rc(1, 0.9), _rc(2, 0.8)]
+    mock_db = MagicMock()
 
-    out = retrieve(MagicMock(), "合同编号", top_k=5)
+    out = retrieve(mock_db, "合同编号", top_k=5)
 
     assert [c.chunk_id for c in out] == [1, 2]
+    mock_db.rollback.assert_called_once()
     get_settings.cache_clear()
