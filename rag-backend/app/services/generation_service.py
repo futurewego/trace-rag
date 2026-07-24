@@ -5,6 +5,7 @@ from anthropic import Anthropic
 
 from app.config import get_settings
 from app.schemas.citation import Citation
+from app.services.context_service import ContextBlock
 from app.services.retrieval_service import RetrievedChunk
 from app.utils.citation_utils import extract_citations
 
@@ -15,47 +16,61 @@ SYSTEM_PROMPT = """你是企业知识库问答助手。严格遵守：
 4. 如果 context 中找不到答案，明确回答："根据现有知识库无法回答这个问题。" 不要编造。
 5. 回答用 Markdown，简明扼要。"""
 
+LOW_CONFIDENCE_NOTE = "⚠️ 检索到的内容相关性较低，请核实。\n\n"
+
 
 @lru_cache
 def _client() -> Anthropic:
     return Anthropic(api_key=get_settings().anthropic_api_key)
 
 
-def _build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
+def is_low_confidence(chunks: list[RetrievedChunk]) -> bool:
+    """top-1 分数落在 [rerank_min_score, low_confidence_score) 时提示低置信。
+
+    空结果属于无据拒答，不是低置信回答，因此返回 False。
+    """
+    if not chunks:
+        return False
+    s = get_settings()
+    return max(c.score for c in chunks) < s.low_confidence_score
+
+
+def _build_user_prompt(query: str, blocks: list[ContextBlock]) -> str:
     parts = ["<context>"]
-    for i, ck in enumerate(chunks, start=1):
-        page = f" P{ck.page_num}" if ck.page_num else ""
-        parts.append(f"\n[文档{i}] {ck.filename}{page}\n{ck.content}\n")
+    for i, b in enumerate(blocks, start=1):
+        page = f" P{b.page_num}" if b.page_num else ""
+        sec = f" [{' > '.join(b.section_path)}]" if b.section_path else ""
+        parts.append(f"\n[文档{i}] {b.filename}{page}{sec}\n{b.content}\n")
     parts.append("</context>\n")
     parts.append(f"用户问题：{query}")
     return "".join(parts)
 
 
-def _map_citations(answer: str, chunks: list[RetrievedChunk]) -> list[Citation]:
+def _map_citations(answer: str, blocks: list[ContextBlock]) -> list[Citation]:
     out: list[Citation] = []
     for idx in extract_citations(answer):
-        if 1 <= idx <= len(chunks):
-            ck = chunks[idx - 1]
+        if 1 <= idx <= len(blocks):
+            b = blocks[idx - 1]
             out.append(
                 Citation(
-                    doc_id=ck.doc_id,
-                    filename=ck.filename,
-                    page_num=ck.page_num,
-                    chunk_id=ck.chunk_id,
-                    score=ck.score,
+                    doc_id=b.doc_id,
+                    filename=b.filename,
+                    page_num=b.page_num,
+                    chunk_id=b.chunk_id,
+                    score=b.score,
                 )
             )
     return out
 
 
 def generate_answer(
-    query: str, chunks: list[RetrievedChunk]
+    query: str, blocks: list[ContextBlock], low_confidence: bool = False
 ) -> tuple[str, list[Citation]]:
-    if not chunks:
+    if not blocks:
         return ("根据现有知识库无法回答这个问题。", [])
 
     settings = get_settings()
-    user_prompt = _build_user_prompt(query, chunks)
+    user_prompt = _build_user_prompt(query, blocks)
     resp = _client().messages.create(
         model=settings.anthropic_model,
         max_tokens=1024,
@@ -63,11 +78,13 @@ def generate_answer(
         messages=[{"role": "user", "content": user_prompt}],
     )
     answer = resp.content[0].text
-    return (answer, _map_citations(answer, chunks))
+    if low_confidence:
+        answer = LOW_CONFIDENCE_NOTE + answer
+    return (answer, _map_citations(answer, blocks))
 
 
 def generate_answer_stream(
-    query: str, chunks: list[RetrievedChunk]
+    query: str, blocks: list[ContextBlock], low_confidence: bool = False
 ) -> Iterator[tuple[str, str | list[Citation]]]:
     """Generator yielding (event_type, payload).
 
@@ -75,13 +92,16 @@ def generate_answer_stream(
       - "text"      payload=str (incremental chunk)
       - "citations" payload=list[Citation] (emitted once at stream end)
     """
-    if not chunks:
+    if not blocks:
         yield ("text", "根据现有知识库无法回答这个问题。")
         yield ("citations", [])
         return
 
     settings = get_settings()
-    user_prompt = _build_user_prompt(query, chunks)
+    user_prompt = _build_user_prompt(query, blocks)
+
+    if low_confidence:
+        yield ("text", LOW_CONFIDENCE_NOTE)
 
     full_text = ""
     with _client().messages.stream(
@@ -94,4 +114,4 @@ def generate_answer_stream(
             full_text += delta
             yield ("text", delta)
 
-    yield ("citations", _map_citations(full_text, chunks))
+    yield ("citations", _map_citations(full_text, blocks))

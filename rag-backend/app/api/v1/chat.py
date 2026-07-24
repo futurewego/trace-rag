@@ -10,7 +10,12 @@ from app.dependencies import _SessionLocal, get_db
 from app.models import Message, RetrievalLog
 from app.models import Session as ChatSession
 from app.schemas.citation import Citation
-from app.services.generation_service import generate_answer, generate_answer_stream
+from app.services.context_service import assemble_context
+from app.services.generation_service import (
+    generate_answer,
+    generate_answer_stream,
+    is_low_confidence,
+)
 from app.services.retrieval_service import retrieve
 
 router = APIRouter()
@@ -61,8 +66,11 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     retrieved = retrieve(db, req.message)
     retrieval_ms = int((time.perf_counter() - t0) * 1000)
 
+    blocks = assemble_context(db, retrieved)
+    low_conf = is_low_confidence(retrieved)
+
     t1 = time.perf_counter()
-    answer, citations = generate_answer(req.message, retrieved)
+    answer, citations = generate_answer(req.message, blocks, low_conf)
     generation_ms = int((time.perf_counter() - t1) * 1000)
 
     db.add(
@@ -98,6 +106,9 @@ def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
     retrieved = retrieve(db, req.message)
     retrieval_ms = int((time.perf_counter() - t0) * 1000)
 
+    blocks = assemble_context(db, retrieved)
+    low_conf = is_low_confidence(retrieved)
+
     session_id = session.id
     user_message = req.message
     retrieval_payload = _build_retrieval_log_payload(retrieved)
@@ -110,7 +121,9 @@ def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
 
         t1 = time.perf_counter()
         try:
-            for event_type, payload in generate_answer_stream(user_message, retrieved):
+            for event_type, payload in generate_answer_stream(
+                user_message, blocks, low_conf
+            ):
                 if event_type == "text":
                     full_answer_parts.append(payload)
                     yield {"event": "text", "data": json.dumps({"delta": payload})}
