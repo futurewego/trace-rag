@@ -63,6 +63,17 @@ def test_empty_input_returns_empty():
     assert _order_and_budget([], 100) == []
 
 
+def test_block_larger_than_budget_is_skipped_not_emitted():
+    """单块就超预算时必须被跳过，绝不能超预算输出。"""
+    ordered = _order_and_budget([_blk(1, 0.9, 5000), _blk(2, 0.7, 100)], 1000)
+    assert [b.chunk_id for b in ordered] == [2]
+    assert sum(b.token_count for b in ordered) <= 1000
+
+
+def test_all_blocks_larger_than_budget_returns_empty():
+    assert _order_and_budget([_blk(1, 0.9, 5000), _blk(2, 0.7, 4000)], 1000) == []
+
+
 def test_assemble_context_empty_chunks_returns_empty_without_db_hit():
     db = MagicMock()
     assert assemble_context(db, []) == []
@@ -122,6 +133,19 @@ def test_assemble_context_missing_parent_row_degrades_to_child_content():
 
     assert len(blocks) == 1
     assert blocks[0].chunk_id == 8
+    assert blocks[0].content == "子块兜底内容"
+
+
+def test_assemble_context_empty_parent_content_falls_back_to_child_content():
+    """父块存在但 content 为空字符串（异常数据）：必须回落到子块内容，
+    而不是注入一个空的上下文块——这是 Fix 1 的既定策略。"""
+    db = _mock_db([(100, "")])
+    chunks = [_rc(cid=9, score=0.5, parent_id=100, content="子块兜底内容")]
+
+    blocks = assemble_context(db, chunks)
+
+    assert len(blocks) == 1
+    assert blocks[0].chunk_id == 9
     assert blocks[0].content == "子块兜底内容"
 
 

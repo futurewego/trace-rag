@@ -57,10 +57,19 @@ def assemble_context(db: Session, chunks: list[RetrievedChunk]) -> list[ContextB
     best: dict[object, ContextBlock] = {}
     for c in chunks:
         key = ("p", c.parent_chunk_id) if c.parent_chunk_id is not None else ("c", c.chunk_id)
-        content = parent_content.get(c.parent_chunk_id or -1) or c.content
         existing = best.get(key)
         if existing is not None and existing.score >= c.score:
             continue
+
+        # 默认用子块自身内容；仅当父块存在且非空时才扩展为父块。
+        # 空父块属异常情况（chunk_unit 不产出空组），此时回落到子块内容——
+        # 注入一个空上下文块对生成毫无价值。
+        content = c.content
+        if c.parent_chunk_id is not None:
+            parent_text = parent_content.get(c.parent_chunk_id)
+            if parent_text:
+                content = parent_text
+
         best[key] = ContextBlock(
             content=content,
             chunk_id=c.chunk_id,
