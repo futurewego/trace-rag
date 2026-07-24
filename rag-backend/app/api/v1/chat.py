@@ -78,7 +78,8 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
             session_id=session.id,
             query=req.message,
             retrieved_chunks=_build_retrieval_log_payload(retrieved),
-            chunks_sent_to_llm=len(retrieved),
+            chunks_sent_to_llm=len(blocks),
+            total_tokens=sum(b.token_count for b in blocks),
             retrieval_latency_ms=retrieval_ms,
             generation_latency_ms=generation_ms,
         )
@@ -162,7 +163,8 @@ def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                     session_id=session_id,
                     query=user_message,
                     retrieved_chunks=retrieval_payload,
-                    chunks_sent_to_llm=len(retrieval_payload),
+                    chunks_sent_to_llm=len(blocks),
+                    total_tokens=sum(b.token_count for b in blocks),
                     retrieval_latency_ms=retrieval_ms,
                     generation_latency_ms=generation_ms,
                 )

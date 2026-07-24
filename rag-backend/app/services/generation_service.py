@@ -25,13 +25,13 @@ def _client() -> Anthropic:
 
 
 def is_low_confidence(chunks: list[RetrievedChunk]) -> bool:
-    """top-1 分数落在 [rerank_min_score, low_confidence_score) 时提示低置信。
-
-    空结果属于无据拒答，不是低置信回答，因此返回 False。
-    """
+    """低置信提示：仅当启用 Cohere 重排（分数已校准）且 top-1 分数 < low_confidence_score 时为真。
+    纯余弦部署下分数不可比，不做低置信判定；无结果属拒答而非低置信。"""
     if not chunks:
         return False
     s = get_settings()
+    if not s.cohere_api_key:
+        return False
     return max(c.score for c in chunks) < s.low_confidence_score
 
 

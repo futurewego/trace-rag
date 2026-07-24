@@ -147,12 +147,20 @@ def retrieve(db: Session, query: str, top_k: int | None = None) -> list[Retrieve
     candidate_n = settings.retrieval_candidate_k if use_rerank else top_k
     candidates = _cosine_candidates(db, q_vec, limit=candidate_n)
 
+    reranked = False
     if use_rerank and len(candidates) > top_k:
         try:
             candidates = _rerank_with_cohere(query, candidates, top_n=candidate_n)
+            reranked = True
         except Exception as e:
             logger.warning("cohere rerank failed, fallback to cosine: %s", e)
 
-    survivors = _apply_threshold(candidates, settings.rerank_min_score)
-    survivors = _dedup_by_embedding(survivors, settings.dedup_cosine_threshold)
-    return survivors[:top_k]
+    # rerank_min_score is calibrated for Cohere relevance (0..1), NOT for raw
+    # cosine (text-embedding-3-small on Chinese scores far lower). Apply the hard
+    # relevance threshold only when rerank actually produced the scores, so a
+    # pure-cosine (no COHERE_API_KEY) or rerank-failed path keeps P1a's top_k
+    # behaviour instead of over-refusing.
+    if reranked:
+        candidates = _apply_threshold(candidates, settings.rerank_min_score)
+    candidates = _dedup_by_embedding(candidates, settings.dedup_cosine_threshold)
+    return candidates[:top_k]

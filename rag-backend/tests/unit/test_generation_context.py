@@ -47,10 +47,26 @@ def test_prompt_omits_missing_page_and_section():
 # ---------------------------------------------------------------------------
 
 
-def test_is_low_confidence_between_thresholds():
-    assert is_low_confidence([_rc(0.5)]) is True
-    assert is_low_confidence([_rc(0.9)]) is False
-    assert is_low_confidence([]) is False
+def test_is_low_confidence_between_thresholds(monkeypatch):
+    """低置信判定基于校准过的 rerank 分数，需要显式启用 Cohere。"""
+    monkeypatch.setenv("COHERE_API_KEY", "test")
+    gen_service.get_settings.cache_clear()
+    try:
+        assert is_low_confidence([_rc(0.5)]) is True
+        assert is_low_confidence([_rc(0.9)]) is False
+        assert is_low_confidence([]) is False
+    finally:
+        gen_service.get_settings.cache_clear()
+
+
+def test_is_low_confidence_false_without_cohere(monkeypatch):
+    """未启用 Cohere（纯余弦部署）时分数不可比，即便处于中间档也不判定为低置信。"""
+    monkeypatch.setenv("COHERE_API_KEY", "")
+    gen_service.get_settings.cache_clear()
+    try:
+        assert is_low_confidence([_rc(0.5)]) is False
+    finally:
+        gen_service.get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------------------
