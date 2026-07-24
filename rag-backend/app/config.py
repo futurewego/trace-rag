@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     dedup_cosine_threshold: float = 0.92
     context_token_budget: int = 8000
 
+    # Hybrid sparse retrieval (P2b)
+    sparse_candidate_k: int = 20
+    rrf_k: int = 60
+    rrf_dense_weight: float = 0.6
+    rrf_sparse_weight: float = 0.4
+    enable_sparse: bool = True
+
     # Cohere Rerank (optional)
     cohere_api_key: str = Field("", alias="COHERE_API_KEY")
     cohere_rerank_model: str = Field(
