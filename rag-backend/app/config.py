@@ -37,6 +37,18 @@ class Settings(BaseSettings):
     top_k: int = 5
     retrieval_candidate_k: int = 20  # cosine 召回数，重排前
 
+    # Chunking (P2a: small-to-big)
+    child_chunk_tokens: int = 200
+    parent_chunk_tokens: int = 800
+    child_overlap_tokens: int = 32
+    table_max_tokens: int = 1024
+
+    # Retrieval guardrails / assembly (P2a)
+    rerank_min_score: float = 0.4
+    low_confidence_score: float = 0.6
+    dedup_cosine_threshold: float = 0.92
+    context_token_budget: int = 8000
+
     # Cohere Rerank (optional)
     cohere_api_key: str = Field("", alias="COHERE_API_KEY")
     cohere_rerank_model: str = Field(
