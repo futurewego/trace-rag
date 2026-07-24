@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     rrf_k: int = 60
     rrf_dense_weight: float = 0.6
     rrf_sparse_weight: float = 0.4
-    enable_sparse: bool = True
+    enable_sparse: bool = Field(True, alias="ENABLE_SPARSE")
 
     # Cohere Rerank (optional)
     cohere_api_key: str = Field("", alias="COHERE_API_KEY")

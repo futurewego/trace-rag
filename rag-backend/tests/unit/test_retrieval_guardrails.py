@@ -58,6 +58,9 @@ def test_retrieve_no_threshold_without_cohere(monkeypatch):
         monkeypatch.setattr(
             retrieval_service, "_cosine_candidates", lambda db, q_vec, limit: candidates
         )
+        monkeypatch.setattr(
+            retrieval_service, "_sparse_candidates", lambda db, query, limit: []
+        )
 
         def _boom(*args, **kwargs):
             raise AssertionError("_rerank_with_cohere must not be called without COHERE_API_KEY")
@@ -90,6 +93,9 @@ def test_retrieve_applies_threshold_when_reranked(monkeypatch):
             retrieval_service,
             "_cosine_candidates",
             lambda db, q_vec, limit: cosine_candidates,
+        )
+        monkeypatch.setattr(
+            retrieval_service, "_sparse_candidates", lambda db, query, limit: []
         )
         monkeypatch.setattr(
             retrieval_service,

@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 
 import cohere
@@ -134,6 +134,9 @@ def _rrf_fuse(
 
     稠密的余弦分与稀疏的 ts_rank 分量纲不可比，RRF 以 1/(k+rank) 加权求和天然
     规避该问题。任一路为空即安全退化为另一路。融合后 score 覆写为 RRF 分。
+
+    不修改输入对象：调用方持有的 dense/sparse 列表中的 RetrievedChunk 实例保持
+    不变，返回的是携带 RRF 分的副本（dataclasses.replace）。
     """
     scores: dict[int, float] = {}
     rep: dict[int, RetrievedChunk] = {}
@@ -145,9 +148,7 @@ def _rrf_fuse(
 
     fused: list[RetrievedChunk] = []
     for cid in sorted(scores, key=lambda i: scores[i], reverse=True):
-        c = rep[cid]
-        c.score = scores[cid]
-        fused.append(c)
+        fused.append(replace(rep[cid], score=scores[cid]))
     return fused
 
 
@@ -224,7 +225,21 @@ def retrieve(db: Session, query: str, top_k: int | None = None) -> list[Retrieve
     # If Cohere is configured, oversample → rerank; else pure cosine
     use_rerank = bool(settings.cohere_api_key)
     candidate_n = settings.retrieval_candidate_k if use_rerank else top_k
-    candidates = _cosine_candidates(db, q_vec, limit=candidate_n)
+
+    dense = _cosine_candidates(db, q_vec, limit=candidate_n)
+
+    # Hybrid: fuse dense with zhparser sparse hits by RANK (scores are not
+    # comparable across the two retrievers). Either side may be empty.
+    if settings.enable_sparse:
+        sparse = _sparse_candidates(db, query, limit=settings.sparse_candidate_k)
+        candidates = _rrf_fuse(
+            dense, sparse,
+            k=settings.rrf_k,
+            dense_w=settings.rrf_dense_weight,
+            sparse_w=settings.rrf_sparse_weight,
+        )
+    else:
+        candidates = dense
 
     reranked = False
     if use_rerank and len(candidates) > top_k:
@@ -232,13 +247,11 @@ def retrieve(db: Session, query: str, top_k: int | None = None) -> list[Retrieve
             candidates = _rerank_with_cohere(query, candidates, top_n=candidate_n)
             reranked = True
         except Exception as e:
-            logger.warning("cohere rerank failed, fallback to cosine: %s", e)
+            logger.warning("cohere rerank failed, fallback to fused order: %s", e)
 
-    # rerank_min_score is calibrated for Cohere relevance (0..1), NOT for raw
-    # cosine (text-embedding-3-small on Chinese scores far lower). Apply the hard
-    # relevance threshold only when rerank actually produced the scores, so a
-    # pure-cosine (no COHERE_API_KEY) or rerank-failed path keeps P1a's top_k
-    # behaviour instead of over-refusing.
+    # rerank_min_score is calibrated for Cohere relevance (0..1) — NOT for cosine
+    # and NOT for RRF scores (which are rank-derived and have no absolute meaning).
+    # Apply the hard threshold only when rerank actually produced the scores.
     if reranked:
         candidates = _apply_threshold(candidates, settings.rerank_min_score)
     candidates = _dedup_by_embedding(candidates, settings.dedup_cosine_threshold)

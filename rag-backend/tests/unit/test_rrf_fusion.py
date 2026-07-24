@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.retrieval_service import RetrievedChunk, _rrf_fuse
 
 
@@ -41,4 +43,4 @@ def test_representative_keeps_downstream_fields():
 
 def test_score_is_overwritten_with_rrf_score():
     fused = _rrf_fuse([_rc(1, score=0.99)], [], k=60, dense_w=0.6, sparse_w=0.4)
-    assert fused[0].score == 0.6 * (1 / 61)
+    assert fused[0].score == pytest.approx(0.6 * (1 / 61))
