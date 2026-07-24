@@ -1,10 +1,12 @@
 import logging
 from dataclasses import dataclass, replace
 from functools import lru_cache
+from typing import Any
 
 import cohere
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import ColumnElement
 
 from app.config import get_settings
 from app.models import Chunk, Document
@@ -75,7 +77,7 @@ def _cosine_candidates(
 # NOTE: this expression must stay byte-identical to the one in migration 004's
 # `CREATE INDEX ... USING gin (to_tsvector('zh', content))`, otherwise Postgres
 # will not use the GIN index.
-def _zh_tsvector():
+def _zh_tsvector() -> ColumnElement[Any]:
     return func.to_tsvector("zh", Chunk.content)
 
 
