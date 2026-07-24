@@ -58,7 +58,13 @@ def test_migration_003_roundtrip(pg, monkeypatch):
         ))
 
     # Apply P1a — additive migration backfills doc_group_id = id for existing rows.
-    command.upgrade(cfg, "head")
+    # Pin to 003_p1a_foundation rather than "head": this test verifies the P1a
+    # round-trip only. Later migrations (e.g. 004_p2b_sparse) may CREATE EXTENSION
+    # zhparser, which the stock pgvector/pgvector:pg16 image used here does not
+    # have (zhparser is only baked into the custom trace-rag/pg-zhparser image —
+    # see deploy/postgres-zhparser/). Chasing "head" would make this test fail
+    # for reasons unrelated to migration 003.
+    command.upgrade(cfg, "003_p1a_foundation")
 
     assert {"doc_version", "is_latest", "doc_group_id", "knowledge_base_id"} <= _cols(
         engine, "documents"

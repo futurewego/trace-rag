@@ -3,6 +3,12 @@
 Revision ID: 004_p2b_sparse
 Revises: 003_p1a_foundation
 Create Date: 2026-07-24
+
+NOTE: This migration requires the zhparser extension and therefore only runs
+against the custom `trace-rag/pg-zhparser` image (see
+deploy/postgres-zhparser/), not the stock `pgvector/pgvector` image. Tests
+that need a fixed pre-004 schema (e.g. tests/integration/test_migration_003.py)
+must pin to an explicit revision instead of upgrading to "head".
 """
 from __future__ import annotations
 
