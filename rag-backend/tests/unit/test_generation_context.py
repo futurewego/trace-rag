@@ -17,9 +17,10 @@ def _blk(cid, content, page=3, sec=None, score=0.8, doc_id=1, filename="合同.p
     )
 
 
-def _rc(score, cid=1):
+def _rc(score, cid=1, reranked=False):
     return RetrievedChunk(
-        chunk_id=cid, doc_id=1, filename="a", page_num=1, content="c", score=score
+        chunk_id=cid, doc_id=1, filename="a", page_num=1, content="c", score=score,
+        reranked=reranked,
     )
 
 
@@ -48,12 +49,14 @@ def test_prompt_omits_missing_page_and_section():
 
 
 def test_is_low_confidence_between_thresholds(monkeypatch):
-    """低置信判定基于校准过的 rerank 分数，需要显式启用 Cohere。"""
+    """低置信判定基于校准过的 rerank 分数：chunk 必须携带 reranked=True。
+    仅设置 COHERE_API_KEY 已不足够 —— retrieve() 只有在实际调用 Cohere 重排
+    成功时才会把 reranked 标记为 True。"""
     monkeypatch.setenv("COHERE_API_KEY", "test")
     gen_service.get_settings.cache_clear()
     try:
-        assert is_low_confidence([_rc(0.5)]) is True
-        assert is_low_confidence([_rc(0.9)]) is False
+        assert is_low_confidence([_rc(0.5, reranked=True)]) is True
+        assert is_low_confidence([_rc(0.9, reranked=True)]) is False
         assert is_low_confidence([]) is False
     finally:
         gen_service.get_settings.cache_clear()
@@ -65,6 +68,19 @@ def test_is_low_confidence_false_without_cohere(monkeypatch):
     gen_service.get_settings.cache_clear()
     try:
         assert is_low_confidence([_rc(0.5)]) is False
+    finally:
+        gen_service.get_settings.cache_clear()
+
+
+def test_is_low_confidence_false_for_rrf_scores_even_with_cohere_key(monkeypatch):
+    """chunk.reranked=False（RRF 融合序或 rerank 失败降级）时，即便配置了
+    COHERE_API_KEY，也不能仅凭 key 存在就判定分数已校准 —— RRF 分数量级
+    ~0.0098，恒小于 low_confidence_score，若沿用旧的 proxy 逻辑会导致每次
+    回答都被误标为低置信。"""
+    monkeypatch.setenv("COHERE_API_KEY", "test")
+    gen_service.get_settings.cache_clear()
+    try:
+        assert is_low_confidence([_rc(0.0098, reranked=False)]) is False
     finally:
         gen_service.get_settings.cache_clear()
 

@@ -25,13 +25,21 @@ def _client() -> Anthropic:
 
 
 def is_low_confidence(chunks: list[RetrievedChunk]) -> bool:
-    """低置信提示：仅当启用 Cohere 重排（分数已校准）且 top-1 分数 < low_confidence_score 时为真。
-    纯余弦部署下分数不可比，不做低置信判定；无结果属拒答而非低置信。"""
+    """低置信提示：仅当所有 chunk 都经过 Cohere 重排（分数已校准）且最高分
+    < low_confidence_score 时为真。
+
+    之前用 `settings.cohere_api_key` 是否配置作为"分数已校准"的代理信号，但
+    retrieve() 只在 `len(candidates) > top_k` 时才重排，且 Cohere 调用失败会
+    降级为融合序（RRF 分，量级 ~0.0098，恒 < 0.6）。因此改为直接读取每个
+    RetrievedChunk 上的 `reranked` 标记，而不是再推导一次。用 `all()` 而不是
+    `any()`：只要列表中混有未重排的 chunk，说明这批分数不是同一量纲、不可比，
+    整体就不能视为"已校准"。
+    纯余弦 / RRF 部署下分数不可比，不做低置信判定；无结果属拒答而非低置信。"""
     if not chunks:
         return False
-    s = get_settings()
-    if not s.cohere_api_key:
+    if not all(c.reranked for c in chunks):
         return False
+    s = get_settings()
     return max(c.score for c in chunks) < s.low_confidence_score
 
 

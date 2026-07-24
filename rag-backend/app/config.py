@@ -51,9 +51,18 @@ class Settings(BaseSettings):
 
     # Hybrid sparse retrieval (P2b)
     sparse_candidate_k: int = 20
-    rrf_k: int = 60
-    rrf_dense_weight: float = 0.6
-    rrf_sparse_weight: float = 0.4
+    # rrf_k / weights are calibrated for OUR candidate-list depth (~20 items:
+    # retrieval_candidate_k / sparse_candidate_k), NOT the TREC convention of
+    # k=60 which assumes ~1000-item runs. At k=60 with 0.6/0.4 weights, a
+    # sparse-only rank-1 hit (0.4/61 = 0.00656) scores below a dense rank-5 hit
+    # (0.6/65 = 0.00923), so a chunk found only by the sparse arm could never
+    # reach a top-5 answer. At k=10 with equal 0.5/0.5 weights, sparse#1
+    # (0.5/11 = 0.04545) beats dense#5 (0.5/15 = 0.03333), so a sparse-only top
+    # hit does enter the top-5. Re-tune with tests/eval/run_eval.py once API
+    # keys are available for a real eval run.
+    rrf_k: int = 10
+    rrf_dense_weight: float = 0.5
+    rrf_sparse_weight: float = 0.5
     enable_sparse: bool = Field(True, alias="ENABLE_SPARSE")
 
     # Cohere Rerank (optional)

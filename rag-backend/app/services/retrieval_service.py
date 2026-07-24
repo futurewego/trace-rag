@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Any
 
 import cohere
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, literal_column, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement
 
@@ -26,6 +26,7 @@ class RetrievedChunk:
     section_path: list[str] | None = None
     parent_chunk_id: int | None = None
     embedding: list[float] | None = None
+    reranked: bool = False
 
 
 @lru_cache
@@ -77,12 +78,19 @@ def _cosine_candidates(
 # NOTE: this expression must stay byte-identical to the one in migration 004's
 # `CREATE INDEX ... USING gin (to_tsvector('zh', content))`, otherwise Postgres
 # will not use the GIN index.
+#
+# The 'zh' config MUST be a SQL literal, not a bound parameter: as a bind param
+# (`to_tsvector(%(param)s, content)`) matching the expression index depends on
+# the planner const-folding the parameter, which is not guaranteed. As a
+# literal it is byte-identical to the index expression by construction.
 def _zh_tsvector() -> ColumnElement[Any]:
-    return func.to_tsvector("zh", Chunk.content)
+    return func.to_tsvector(literal_column("'zh'"), Chunk.content)
 
 
 def _sparse_stmt(query: str, limit: int) -> Select:
-    tsq = func.plainto_tsquery("zh", query)
+    # Same reasoning as _zh_tsvector: the 'zh' config is a literal. The user's
+    # query text stays a bound parameter — never inline user input into SQL.
+    tsq = func.plainto_tsquery(literal_column("'zh'"), query)
     tsv = _zh_tsvector()
     return (
         select(
@@ -178,6 +186,7 @@ def _rerank_with_cohere(
                 section_path=original.section_path,
                 parent_chunk_id=original.parent_chunk_id,
                 embedding=original.embedding,
+                reranked=True,
             )
         )
     return out
@@ -224,38 +233,47 @@ def retrieve(db: Session, query: str, top_k: int | None = None) -> list[Retrieve
 
     q_vec = embed_query(query)
 
-    # If Cohere is configured, oversample → rerank; else pure cosine
+    # Oversample dense candidates whenever Cohere rerank OR sparse fusion is on:
+    # rerank needs a deep pool to re-score, and RRF needs a deep dense pool or a
+    # sparse-only hit can never out-rank the dense top-k (see rrf_k/weight
+    # comments in app/config.py). Pure-cosine top_k stays cheap.
     use_rerank = bool(settings.cohere_api_key)
-    candidate_n = settings.retrieval_candidate_k if use_rerank else top_k
+    candidate_n = (
+        settings.retrieval_candidate_k
+        if (use_rerank or settings.enable_sparse)
+        else top_k
+    )
 
     dense = _cosine_candidates(db, q_vec, limit=candidate_n)
 
     # Hybrid: fuse dense with zhparser sparse hits by RANK (scores are not
     # comparable across the two retrievers). Either side may be empty.
+    sparse: list[RetrievedChunk] = []
     if settings.enable_sparse:
         try:
-            sparse = _sparse_candidates(db, query, limit=settings.sparse_candidate_k)
-            candidates = _rrf_fuse(
-                dense, sparse,
-                k=settings.rrf_k,
-                dense_w=settings.rrf_dense_weight,
-                sparse_w=settings.rrf_sparse_weight,
-            )
+            # SAVEPOINT: a failed sparse query (e.g. missing 'zh' config on a DB
+            # that has not had migration 004 applied) must not discard the
+            # caller's already-flushed session/message rows. chat.py flushes a
+            # Session and a user Message onto `db` BEFORE calling retrieve() —
+            # a full db.rollback() here would expunge those pending rows and
+            # leave session.id stale, causing a downstream NOT NULL FK failure.
+            # A nested transaction (SAVEPOINT) rolls back only the aborted
+            # sparse statement, leaving the outer transaction intact.
+            with db.begin_nested():
+                sparse = _sparse_candidates(db, query, limit=settings.sparse_candidate_k)
         except Exception as e:
             # Sparse needs the 'zh' text-search config from migration 004 (custom
             # pg-zhparser image). If it is unavailable, degrade to dense-only
             # rather than failing the whole query — same posture as the rerank
-            # fallback below.
-            #
-            # Clear the aborted transaction so the later assemble_context() query
-            # and get_db()'s end-of-request commit still work. A rollback failure
-            # (dead connection) must not defeat the fallback itself.
-            try:
-                db.rollback()
-            except Exception:  # noqa: BLE001
-                logger.exception("rollback after sparse failure also failed")
+            # fallback below. The SAVEPOINT above has already released/rolled
+            # back on exit, so the outer transaction is untouched here.
             logger.warning("sparse retrieval failed, falling back to dense: %s", e)
-            candidates = dense
+        candidates = _rrf_fuse(
+            dense, sparse,
+            k=settings.rrf_k,
+            dense_w=settings.rrf_dense_weight,
+            sparse_w=settings.rrf_sparse_weight,
+        )
     else:
         candidates = dense
 
