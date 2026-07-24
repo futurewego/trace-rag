@@ -123,6 +123,34 @@ def _sparse_candidates(
     ]
 
 
+def _rrf_fuse(
+    dense: list[RetrievedChunk],
+    sparse: list[RetrievedChunk],
+    k: int,
+    dense_w: float,
+    sparse_w: float,
+) -> list[RetrievedChunk]:
+    """Reciprocal Rank Fusion —— 只用名次，不用分值。
+
+    稠密的余弦分与稀疏的 ts_rank 分量纲不可比，RRF 以 1/(k+rank) 加权求和天然
+    规避该问题。任一路为空即安全退化为另一路。融合后 score 覆写为 RRF 分。
+    """
+    scores: dict[int, float] = {}
+    rep: dict[int, RetrievedChunk] = {}
+
+    for weight, results in ((dense_w, dense), (sparse_w, sparse)):
+        for rank, c in enumerate(results, start=1):
+            scores[c.chunk_id] = scores.get(c.chunk_id, 0.0) + weight * (1 / (k + rank))
+            rep.setdefault(c.chunk_id, c)
+
+    fused: list[RetrievedChunk] = []
+    for cid in sorted(scores, key=lambda i: scores[i], reverse=True):
+        c = rep[cid]
+        c.score = scores[cid]
+        fused.append(c)
+    return fused
+
+
 def _rerank_with_cohere(
     query: str, candidates: list[RetrievedChunk], top_n: int
 ) -> list[RetrievedChunk]:
