@@ -21,6 +21,9 @@ class RetrievedChunk:
     page_num: int | None
     content: str
     score: float  # cosine similarity OR rerank relevance (depends on path)
+    section_path: list[str] | None = None
+    parent_chunk_id: int | None = None
+    embedding: list[float] | None = None
 
 
 @lru_cache
@@ -36,6 +39,9 @@ def _candidates_stmt(q_vec: list[float], limit: int) -> Select:
             Document.filename,
             Chunk.page_num,
             Chunk.content,
+            Chunk.section_path,
+            Chunk.parent_chunk_id,
+            Chunk.embedding,
             (1 - Chunk.embedding.cosine_distance(q_vec)).label("score"),
         )
         .join(Document, Document.id == Chunk.document_id)
@@ -58,6 +64,9 @@ def _cosine_candidates(
             page_num=r.page_num,
             content=r.content,
             score=float(r.score),
+            section_path=r.section_path,
+            parent_chunk_id=r.parent_chunk_id,
+            embedding=list(r.embedding) if r.embedding is not None else None,
         )
         for r in rows
     ]
@@ -84,9 +93,47 @@ def _rerank_with_cohere(
                 page_num=original.page_num,
                 content=original.content,
                 score=float(r.relevance_score),
+                section_path=original.section_path,
+                parent_chunk_id=original.parent_chunk_id,
+                embedding=original.embedding,
             )
         )
     return out
+
+
+def _apply_threshold(
+    chunks: list[RetrievedChunk], min_score: float
+) -> list[RetrievedChunk]:
+    """低于阈值一律丢弃；可以返回空（由调用方触发无据拒答）。"""
+    return [c for c in chunks if c.score >= min_score]
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def _dedup_by_embedding(
+    chunks: list[RetrievedChunk], threshold: float
+) -> list[RetrievedChunk]:
+    """近重复去重：向量余弦 >= threshold 视为重复，保留先出现（分数更高）的那个。
+
+    用 embedding 而非分词 Jaccard —— 中文无空格，分词 Jaccard 不可用。
+    """
+    kept: list[RetrievedChunk] = []
+    for c in chunks:
+        if c.embedding is None:
+            kept.append(c)
+            continue
+        if any(
+            k.embedding is not None and _cosine(c.embedding, k.embedding) >= threshold
+            for k in kept
+        ):
+            continue
+        kept.append(c)
+    return kept
 
 
 def retrieve(db: Session, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
@@ -100,11 +147,12 @@ def retrieve(db: Session, query: str, top_k: int | None = None) -> list[Retrieve
     candidate_n = settings.retrieval_candidate_k if use_rerank else top_k
     candidates = _cosine_candidates(db, q_vec, limit=candidate_n)
 
-    if not use_rerank or len(candidates) <= top_k:
-        return candidates[:top_k]
+    if use_rerank and len(candidates) > top_k:
+        try:
+            candidates = _rerank_with_cohere(query, candidates, top_n=candidate_n)
+        except Exception as e:
+            logger.warning("cohere rerank failed, fallback to cosine: %s", e)
 
-    try:
-        return _rerank_with_cohere(query, candidates, top_n=top_k)
-    except Exception as e:
-        logger.warning("cohere rerank failed, fallback to cosine: %s", e)
-        return candidates[:top_k]
+    survivors = _apply_threshold(candidates, settings.rerank_min_score)
+    survivors = _dedup_by_embedding(survivors, settings.dedup_cosine_threshold)
+    return survivors[:top_k]
