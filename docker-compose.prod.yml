@@ -1,6 +1,7 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    build: ./deploy/postgres-zhparser
+    image: trace-rag/pg-zhparser:pg16
     container_name: rag_pg
     restart: unless-stopped
     environment:
@@ -27,6 +28,7 @@ services:
       OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-text-embedding-3-small}
       OPENAI_EMBED_DIM: ${OPENAI_EMBED_DIM:-1536}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      ENABLE_SPARSE: ${ENABLE_SPARSE:-true}
       UPLOAD_DIR: /data/uploads
       LOG_LEVEL: INFO
     volumes:

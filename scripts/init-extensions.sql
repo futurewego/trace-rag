@@ -1,2 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS vector;
--- zhparser 在 M2 加，M1 不需要
+-- zhparser: required by alembic migration 004_p2b_sparse (P2b Chinese sparse
+-- retrieval). Provided by the custom deploy/postgres-zhparser image — this
+-- file is bind-mounted over the image's own init script, so it must still
+-- create both extensions.
+CREATE EXTENSION IF NOT EXISTS zhparser;

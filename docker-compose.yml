@@ -1,6 +1,7 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    build: ./deploy/postgres-zhparser
+    image: trace-rag/pg-zhparser:pg16
     container_name: rag_postgres
     ports:
       - "5435:5432"  # host 5435 to avoid collision with other projects on 5432/5433

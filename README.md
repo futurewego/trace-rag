@@ -229,12 +229,15 @@ erDiagram
 cp rag-backend/.env.example rag-backend/.env      # 填 OPENAI / ANTHROPIC / COHERE（OCR 可选）
 cp rag-frontend/.env.local.example rag-frontend/.env.local
 
-# 2) 起数据库（pgvector/pg16，宿主机端口 5435）
+# 2) 起数据库（自定义镜像 pgvector + zhparser，宿主机端口 5435）
+#    docker-compose.yml 的 postgres 服务从 deploy/postgres-zhparser/ 构建，
+#    首次启动会现场 build（非拉取官方 pgvector/pgvector:pg16 镜像）。
 make up
 
 # 3) 装依赖 + 迁移
 cd rag-backend && uv sync && cd ..
-make migrate
+make migrate       # alembic upgrade head —— 依赖上一步的自定义镜像
+                    # （迁移 004_p2b_sparse 需要 zhparser 扩展，官方镜像没有）
 
 # 4) 起后端（:8088）和前端（:3000）
 make dev          # 终端 A
@@ -242,6 +245,21 @@ make frontend     # 终端 B
 ```
 
 打开 **http://localhost:3000** → 在 `/documents` 上传文档，等状态变 `indexed` → 回首页提问。
+
+> **Postgres 镜像是自定义的**：`docker-compose.yml` / `docker-compose.prod.yml` 都从
+> `deploy/postgres-zhparser/`（pgvector + zhparser 中文分词）构建，而不是拉取官方
+> `pgvector/pgvector:pg16`。`alembic upgrade head` 会跑到 P2b 的 `004_p2b_sparse`
+> 迁移（`CREATE EXTENSION zhparser`），官方镜像没有这个扩展会直接失败。
+>
+> 若所在网络访问不了 Docker Hub，首次 `docker build` 前需要先用镜像源拉取基础镜像
+> 再打回官方 tag（否则 `FROM pgvector/pgvector:pg16` 会拉取失败）：
+> ```bash
+> docker pull docker.m.daocloud.io/pgvector/pgvector:pg16
+> docker tag docker.m.daocloud.io/pgvector/pgvector:pg16 pgvector/pgvector:pg16
+> ```
+> 这一步目前只在 `deploy/postgres-zhparser/Dockerfile` 的注释里提到，不做会在
+> `docker build` / `make up` 时遇到不明所以的 pull 失败。详见
+> `deploy/postgres-zhparser/README.md`。
 
 | 服务 | 地址 |
 |------|------|
