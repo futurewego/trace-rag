@@ -1,25 +1,26 @@
-from app.services.chunker_service import chunk_page
+from app.services.chunker_service import chunk_unit, count_tokens
 
 
-def test_chunk_short_page_returns_single_chunk():
-    text = "Hello world. " * 5
-    chunks = chunk_page(text, page_num=1, chunk_size=512, overlap=64)
-    assert len(chunks) == 1
-    assert chunks[0].page_num == 1
-    assert chunks[0].chunk_index == 0
-    assert chunks[0].content.startswith("Hello world")
+def test_short_page_single_parent():
+    groups = chunk_unit("Hello world. " * 5, page_num=1)
+    assert len(groups) == 1
+    assert groups[0].page_num == 1
+    assert groups[0].children[0].content.startswith("Hello world")
 
 
-def test_chunk_long_page_splits_with_overlap():
-    text = "word " * 1000
-    chunks = chunk_page(text, page_num=2, chunk_size=200, overlap=50)
-    assert len(chunks) >= 4
-    assert all(c.page_num == 2 for c in chunks)
-    assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
-    for c in chunks[:-1]:
-        assert c.token_count <= 200
+def test_long_page_splits_into_children_and_parents():
+    text = "\n\n".join("word " * 120 for _ in range(30))
+    groups = chunk_unit(text, page_num=2)
+    children = [c for g in groups for c in g.children]
+    assert len(children) >= 4
+    assert all(g.page_num == 2 for g in groups)
+    assert all(c.token_count <= 200 for c in children)
 
 
-def test_chunk_empty_text_returns_empty():
-    assert chunk_page("", page_num=1) == []
-    assert chunk_page("   ", page_num=1) == []
+def test_empty_text_returns_empty():
+    assert chunk_unit("", page_num=1) == []
+    assert chunk_unit("   ", page_num=1) == []
+
+
+def test_count_tokens_monotonic():
+    assert count_tokens("abc") < count_tokens("abc abc abc")

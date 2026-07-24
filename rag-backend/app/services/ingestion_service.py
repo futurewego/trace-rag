@@ -5,9 +5,8 @@ from contextlib import contextmanager
 from sqlalchemy.orm import Session as SASession
 
 from app.dependencies import _SessionLocal
-from app.models import Chunk, Document
-from app.services.chunker_service import Chunk as PageChunk
-from app.services.chunker_service import chunk_page
+from app.models import Chunk, Document, ParentChunk
+from app.services.chunker_service import chunk_unit
 from app.services.embedding_service import embed_texts
 from app.services.parser_service import parse
 
@@ -30,41 +29,48 @@ def _db_scope():
 _KIND_TO_CHUNK_TYPE = {"page": "text", "section": "text", "slide": "text", "sheet": "table"}
 
 
-def _chunk_units(parsed_units: list[dict]) -> list[tuple[PageChunk, dict]]:
-    rows: list[tuple[PageChunk, dict]] = []
-    for p in parsed_units:
-        for ck in chunk_page(p["text"], page_num=p["page_num"]):
-            rows.append((ck, p))
-    return rows
-
-
-def build_chunk_rows(
-    chunked: list[tuple[PageChunk, dict]],
-    vectors: list[list[float]],
+def build_rows(
+    parsed_units: list[dict],
     doc_id: int,
     source_mime: str | None,
-) -> list[Chunk]:
-    out: list[Chunk] = []
-    for (ck, p), vec in zip(chunked, vectors, strict=True):
-        out.append(
-            Chunk(
-                document_id=doc_id,
-                chunk_index=ck.chunk_index,
-                content=ck.content,
-                page_num=ck.page_num,
-                token_count=ck.token_count,
-                embedding=vec,
-                chunk_type=_KIND_TO_CHUNK_TYPE.get(p.get("kind"), "text"),
-                content_hash=hashlib.sha256(ck.content.encode()).hexdigest(),
-                parse_confidence=p.get("parse_confidence"),
-                section_path=p.get("section_path"),
-                is_latest=True,
-                parent_chunk_id=None,
-                knowledge_base_id=None,
-                metadata_={"source_mime": source_mime, "kind": p.get("kind")},
+) -> tuple[list[ParentChunk], list[tuple[Chunk, int]]]:
+    """返回 (父块行, [(子块行, 父块下标)])。子块尚未带 embedding/parent_chunk_id。"""
+    parents: list[ParentChunk] = []
+    child_pairs: list[tuple[Chunk, int]] = []
+    idx = 0
+    for p in parsed_units:
+        chunk_type = _KIND_TO_CHUNK_TYPE.get(p.get("kind"), "text")
+        for group in chunk_unit(p["text"], p["page_num"], chunk_type=chunk_type):
+            parents.append(
+                ParentChunk(
+                    document_id=doc_id,
+                    content=group.content,
+                    section_path=p.get("section_path"),
+                    page_num=group.page_num,
+                    token_count=group.token_count,
+                )
             )
-        )
-    return out
+            parent_idx = len(parents) - 1
+            for child in group.children:
+                child_pairs.append((
+                    Chunk(
+                        document_id=doc_id,
+                        chunk_index=idx,
+                        content=child.content,
+                        page_num=child.page_num,
+                        token_count=child.token_count,
+                        chunk_type=chunk_type,
+                        content_hash=hashlib.sha256(child.content.encode()).hexdigest(),
+                        parse_confidence=p.get("parse_confidence"),
+                        section_path=p.get("section_path"),
+                        is_latest=True,
+                        knowledge_base_id=None,
+                        metadata_={"source_mime": source_mime, "kind": p.get("kind")},
+                    ),
+                    parent_idx,
+                ))
+                idx += 1
+    return parents, child_pairs
 
 
 def ingest_document(doc_id: int) -> None:
@@ -81,9 +87,9 @@ def ingest_document(doc_id: int) -> None:
 
     try:
         parsed_units = parse(doc_path, mime_type=doc_mime, filename=doc_filename)
-        chunked = _chunk_units(parsed_units)
+        parents, child_pairs = build_rows(parsed_units, doc_id, doc_mime)
 
-        if not chunked:
+        if not child_pairs:
             with _db_scope() as db:
                 doc = db.get(Document, doc_id)
                 doc.status = "indexed"
@@ -91,17 +97,20 @@ def ingest_document(doc_id: int) -> None:
                 doc.chunk_count = 0
             return
 
-        contents = [ck.content for ck, _ in chunked]
-        vectors = embed_texts(contents)
-        rows = build_chunk_rows(chunked, vectors, doc_id, doc_mime)
+        vectors = embed_texts([c.content for c, _ in child_pairs])
 
         with _db_scope() as db:
-            for row in rows:
-                db.add(row)
+            for parent in parents:
+                db.add(parent)
+            db.flush()  # 拿到父块自增 id
+            for (child, parent_idx), vec in zip(child_pairs, vectors, strict=True):
+                child.embedding = vec
+                child.parent_chunk_id = parents[parent_idx].id
+                db.add(child)
             doc = db.get(Document, doc_id)
             doc.status = "indexed"
             doc.page_count = len(parsed_units)
-            doc.chunk_count = len(rows)
+            doc.chunk_count = len(child_pairs)
     except Exception as e:
         logger.exception("ingest failed for doc %s", doc_id)
         with _db_scope() as db:
