@@ -166,14 +166,18 @@ def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
         # Persist in a separate session (the request-scoped one will be closed)
         full_answer = "".join(full_answer_parts)
         with _SessionLocal() as db2:
-            db2.add(
-                Message(
-                    session_id=session_id,
-                    role="assistant",
-                    content=full_answer,
-                    citations=[c.model_dump() for c in final_citations],
+            # 空回答意味着流在第一个 token 之前就中断了（例如连接错误）；写入一条
+            # 空 assistant 消息会毒化该会话的历史窗口——下一轮 get_history 会把它
+            # 过滤掉，只留下孤儿 user 结尾，与追加的当前 user 连续同角色导致 400。
+            if full_answer.strip():
+                db2.add(
+                    Message(
+                        session_id=session_id,
+                        role="assistant",
+                        content=full_answer,
+                        citations=[c.model_dump() for c in final_citations],
+                    )
                 )
-            )
             db2.add(
                 RetrievalLog(
                     session_id=session_id,

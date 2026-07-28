@@ -67,3 +67,30 @@ def test_history_strips_stale_citation_markers_and_notice():
     assert "[1]" not in out[1]["content"] and "[2]" not in out[1]["content"]
     assert not out[1]["content"].startswith("⚠️")
     assert "星曜科技" in out[1]["content"]
+
+
+def test_history_drops_trailing_orphan_user():
+    """窗口以孤儿 user 结尾时必须弹出——否则与追加的当前 user 连续同角色 -> 400。"""
+    db = _db_returning([_msg(3, "user", "孤儿问"), _msg(2, "assistant", "答1"),
+                        _msg(1, "user", "问1")])
+    out = get_history(db, session_id=7, max_turns=5, content_max_chars=500)
+    assert out and out[-1]["role"] == "assistant"
+
+
+def test_history_enforces_strict_alternation():
+    """连续同角色（并发交错/孤儿）只保留先出现的一条，保证严格交替。"""
+    db = _db_returning([_msg(4, "assistant", "答2"), _msg(3, "user", "问2b"),
+                        _msg(2, "user", "问2a"), _msg(1, "assistant", "答1")])
+    # id 正序: [答1(a), 问2a(u), 问2b(u), 答2(a)] -> 开头 a 被弹, 连续 u 保留问2a, 结尾 a 保留
+    out = get_history(db, session_id=7, max_turns=5, content_max_chars=500)
+    roles = [m["role"] for m in out]
+    assert roles == ["user", "assistant"]
+    assert out[0]["content"] == "问2a"
+
+
+def test_history_empty_assistant_then_orphan_user_yields_valid_window():
+    """复现自增殖链：空 assistant 被过滤后留下的尾部孤儿 user 必须被弹出。"""
+    db = _db_returning([_msg(4, "user", "问2"), _msg(3, "assistant", ""),
+                        _msg(2, "assistant", "答1"), _msg(1, "user", "问1")])
+    out = get_history(db, session_id=7, max_turns=5, content_max_chars=500)
+    assert [m["role"] for m in out] == ["user", "assistant"]

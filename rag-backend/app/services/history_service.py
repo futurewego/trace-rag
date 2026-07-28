@@ -38,8 +38,19 @@ def get_history(
         for m in reversed(rows)
         if m.role in ("user", "assistant") and (m.content or "").strip()
     ]
-    # Anthropic 要求首条必须是 user；孤儿消息（流中断）可能让窗口错位成 assistant 开头，
-    # 那会让该会话的每一轮都 400——宁可丢一条最旧的历史。
-    while out and out[0]["role"] != "user":
-        out.pop(0)
-    return out
+    # Anthropic 要求 messages 严格 user/assistant 交替，且我们随后会在末尾追加
+    # 当前这一轮的 user 消息。因此窗口必须满足：user 开头、严格交替、assistant
+    # 结尾（否则与追加的当前 user 相撞）。孤儿消息（流中断产生）会破坏这三条，
+    # 宁可丢弃少量历史也不能让该会话永远 400。
+    normalized: list[dict] = []
+    for m in out:
+        if not normalized:
+            if m["role"] != "user":
+                continue
+            normalized.append(m)
+        elif m["role"] != normalized[-1]["role"]:
+            normalized.append(m)
+        # 与上一条同角色（孤儿/并发交错）：丢弃后来者，保持交替
+    while normalized and normalized[-1]["role"] != "assistant":
+        normalized.pop()
+    return normalized
