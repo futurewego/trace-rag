@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
+from app.config import get_settings
 from app.dependencies import _SessionLocal, get_db
 from app.models import Message, RetrievalLog
 from app.models import Session as ChatSession
@@ -16,6 +17,8 @@ from app.services.generation_service import (
     generate_answer_stream,
     is_low_confidence,
 )
+from app.services.history_service import get_history
+from app.services.query_rewriter import rewrite_query
 from app.services.retrieval_service import retrieve
 
 router = APIRouter()
@@ -59,24 +62,31 @@ def _build_retrieval_log_payload(retrieved):
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     session = _get_or_create_session(db, req)
+    settings = get_settings()
+    history = get_history(
+        db, session.id, settings.history_max_turns, settings.history_content_max_chars
+    )
     db.add(Message(session_id=session.id, role="user", content=req.message))
     db.flush()
 
+    search_query = rewrite_query(req.message, history)
+
     t0 = time.perf_counter()
-    retrieved = retrieve(db, req.message)
+    retrieved = retrieve(db, search_query)
     retrieval_ms = int((time.perf_counter() - t0) * 1000)
 
     blocks = assemble_context(db, retrieved)
     low_conf = is_low_confidence(retrieved)
 
     t1 = time.perf_counter()
-    answer, citations = generate_answer(req.message, blocks, low_conf)
+    answer, citations = generate_answer(req.message, blocks, low_conf, history=history)
     generation_ms = int((time.perf_counter() - t1) * 1000)
 
     db.add(
         RetrievalLog(
             session_id=session.id,
-            query=req.message,
+            query=search_query,
+            original_query=req.message,
             retrieved_chunks=_build_retrieval_log_payload(retrieved),
             chunks_sent_to_llm=len(blocks),
             total_tokens=sum(b.token_count for b in blocks),
@@ -100,11 +110,17 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
 def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
     """SSE endpoint. Events: session / text / citations / done."""
     session = _get_or_create_session(db, req)
+    settings = get_settings()
+    history = get_history(
+        db, session.id, settings.history_max_turns, settings.history_content_max_chars
+    )
     db.add(Message(session_id=session.id, role="user", content=req.message))
     db.flush()
 
+    search_query = rewrite_query(req.message, history)
+
     t0 = time.perf_counter()
-    retrieved = retrieve(db, req.message)
+    retrieved = retrieve(db, search_query)
     retrieval_ms = int((time.perf_counter() - t0) * 1000)
 
     blocks = assemble_context(db, retrieved)
@@ -123,7 +139,7 @@ def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
         t1 = time.perf_counter()
         try:
             for event_type, payload in generate_answer_stream(
-                user_message, blocks, low_conf
+                user_message, blocks, low_conf, history=history
             ):
                 if event_type == "text":
                     full_answer_parts.append(payload)
@@ -161,7 +177,8 @@ def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
             db2.add(
                 RetrievalLog(
                     session_id=session_id,
-                    query=user_message,
+                    query=search_query,
+                    original_query=user_message,
                     retrieved_chunks=retrieval_payload,
                     chunks_sent_to_llm=len(blocks),
                     total_tokens=sum(b.token_count for b in blocks),

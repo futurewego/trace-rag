@@ -40,12 +40,12 @@ def rewrite_query(query: str, history: list[dict]) -> str:
     if not settings.enable_query_rewrite or not history:
         return query
 
-    history_text = "\n".join(
-        f"{'用户' if m['role'] == 'user' else 'AI'}: {m['content']}" for m in history
-    )
-    prompt = REWRITE_PROMPT.format(history=history_text, question=query)
-
     try:
+        history_text = "\n".join(
+            f"{'用户' if m['role'] == 'user' else 'AI'}: {m['content']}" for m in history
+        )
+        prompt = REWRITE_PROMPT.format(history=history_text, question=query)
+
         resp = _client().messages.create(
             model=settings.anthropic_model,
             max_tokens=256,

@@ -68,3 +68,10 @@ def test_disabled_via_env_skips_llm(mock_client, monkeypatch):
         mock_client.assert_not_called()
     finally:
         get_settings.cache_clear()
+
+
+@patch("app.services.query_rewriter._client")
+def test_malformed_history_falls_back(mock_client):
+    """畸形 history 条目（缺 key）必须回落原句，而不是抛 KeyError。"""
+    bad_history = [{"rolle": "user"}]  # typo key, no 'content'
+    assert rewrite_query("那乙方呢？", bad_history) == "那乙方呢？"
