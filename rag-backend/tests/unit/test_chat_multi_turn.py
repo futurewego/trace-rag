@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import app.api.v1.chat as chat_mod
@@ -14,6 +15,22 @@ def _mock_db_with_session(session_id=7):
     fake_session.id = session_id
     db.get.return_value = fake_session
     return db
+
+
+def _drain_sse(body_iterator):
+    """Drain an EventSourceResponse's body_iterator synchronously.
+
+    chat_stream's event_gen is a plain *sync* generator, so sse_starlette
+    (via starlette.concurrency.iterate_in_threadpool) wraps it into an async
+    generator rather than storing it as-is. Running it to completion on a
+    throwaway event loop is what actually executes the generator body past
+    its final `yield` — including the db2 persistence block.
+    """
+
+    async def _consume():
+        return [event async for event in body_iterator]
+
+    return asyncio.run(_consume())
 
 
 @patch.object(chat_mod, "generate_answer", return_value=("答 [1]", []))
@@ -60,3 +77,43 @@ def test_first_turn_behaves_like_before(
     chat(ChatRequest(session_id=7, message="甲方是谁？"), db)
     assert mock_ret.call_args.args[1] == "甲方是谁？"
     assert mock_gen.call_args.kwargs["history"] == []
+
+
+@patch.object(chat_mod, "_SessionLocal")
+@patch.object(chat_mod, "generate_answer_stream")
+@patch.object(chat_mod, "is_low_confidence", return_value=False)
+@patch.object(chat_mod, "assemble_context", return_value=[])
+@patch.object(chat_mod, "retrieve", return_value=[])
+@patch.object(chat_mod, "rewrite_query", return_value="HT-2026-0087 合同的乙方是谁")
+@patch.object(chat_mod, "get_history", return_value=HISTORY)
+def test_chat_stream_uses_rewritten_for_retrieval_and_original_for_generation(
+    mock_hist, mock_rw, mock_ret, mock_asm, mock_low, mock_gen_stream, mock_sessionlocal
+):
+    mock_gen_stream.return_value = iter([("text", "答"), ("citations", [])])
+    db2 = MagicMock()
+    mock_sessionlocal.return_value.__enter__.return_value = db2
+
+    db = _mock_db_with_session()
+    resp = chat_mod.chat_stream(ChatRequest(session_id=7, message="那乙方呢？"), db)
+
+    # Drive the generator to completion; this is also where the SSE protocol
+    # (event order) gets locked down.
+    events = _drain_sse(resp.body_iterator)
+    assert [e["event"] for e in events] == ["session", "text", "citations", "done"]
+
+    # 改写收到原句 + 历史
+    mock_rw.assert_called_once_with("那乙方呢？", HISTORY)
+    # 检索用改写后
+    assert mock_ret.call_args.args[1] == "HT-2026-0087 合同的乙方是谁"
+    # 生成用原句 + 历史
+    gen_call = mock_gen_stream.call_args
+    assert gen_call.args[0] == "那乙方呢？"
+    assert gen_call.kwargs["history"] == HISTORY
+
+    # db2 persistence (separate session, after the request-scoped one closes):
+    # RetrievalLog carries BOTH query fields.
+    logs = [c.args[0] for c in db2.add.call_args_list
+            if isinstance(c.args[0], RetrievalLog)]
+    assert len(logs) == 1
+    assert logs[0].query == "HT-2026-0087 合同的乙方是谁"
+    assert logs[0].original_query == "那乙方呢？"
