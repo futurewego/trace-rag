@@ -18,7 +18,8 @@ from app.services.generation_service import _client
 
 logger = logging.getLogger(__name__)
 
-REWRITE_PROMPT = """你是一个查询改写助手。用户正在进行多轮对话，请根据对话历史，把当前问题改写为一个独立完整的检索查询。
+REWRITE_PROMPT = """你是一个查询改写助手。用户正在进行多轮对话，
+请根据对话历史，把当前问题改写为一个独立完整的检索查询。
 
 要求：
 1. 解析所有代词和指代（"它"、"这个"、"那个产品"、"呢"等）
