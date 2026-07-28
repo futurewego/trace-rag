@@ -81,6 +81,7 @@ def test_sparse_failure_degrades_to_dense(mock_embed, mock_dense, mock_sparse, m
     # violation. The sparse failure must be contained to a SAVEPOINT
     # (db.begin_nested()) so the OUTER transaction is never rolled back.
     mock_db.rollback.assert_not_called()
+    mock_db.begin_nested.assert_called_once()
     get_settings.cache_clear()
 
 

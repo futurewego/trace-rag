@@ -9,8 +9,8 @@ def _sql() -> str:
 
 def test_sparse_stmt_uses_zh_tsvector_and_tsquery():
     sql = _sql()
-    assert "to_tsvector" in sql
-    assert "plainto_tsquery" in sql
+    assert "to_tsvector('zh'" in sql
+    assert "plainto_tsquery('zh'" in sql
     assert "@@" in sql
 
 

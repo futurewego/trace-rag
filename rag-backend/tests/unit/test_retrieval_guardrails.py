@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import app.services.retrieval_service as retrieval_service
 from app.config import get_settings
 from app.services.retrieval_service import (
@@ -67,7 +69,7 @@ def test_retrieve_no_threshold_without_cohere(monkeypatch):
 
         monkeypatch.setattr(retrieval_service, "_rerank_with_cohere", _boom)
 
-        result = retrieve(db=None, query="问题")
+        result = retrieve(db=MagicMock(), query="问题")
 
         assert [c.chunk_id for c in result] == [1, 2]
     finally:
@@ -103,7 +105,7 @@ def test_retrieve_applies_threshold_when_reranked(monkeypatch):
             lambda query, candidates, top_n: reranked,
         )
 
-        result = retrieve(db=None, query="问题")
+        result = retrieve(db=MagicMock(), query="问题")
 
         assert [c.chunk_id for c in result] == [10, 11, 12]
     finally:
