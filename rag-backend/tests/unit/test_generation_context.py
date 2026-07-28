@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import app.services.generation_service as gen_service
 from app.services.context_service import ContextBlock
 from app.services.generation_service import (
@@ -230,3 +232,53 @@ def test_generate_answer_stream_without_low_confidence_no_notice(monkeypatch):
     events = list(generate_answer_stream("问题", blocks, low_confidence=False))
 
     assert ("text", gen_service.LOW_CONFIDENCE_NOTE) not in events
+
+
+# ---------------------------------------------------------------------------
+# generate_answer: conversation history passed as native multi-turn messages
+# ---------------------------------------------------------------------------
+
+
+def test_generate_answer_passes_history_before_user_prompt(monkeypatch):
+    import app.services.generation_service as gen
+
+    captured = {}
+
+    class _FakeMessages:
+        def create(self, **kw):
+            captured.update(kw)
+            resp = MagicMock()
+            resp.content = [MagicMock(text="回答 [1]")]
+            return resp
+
+    fake = MagicMock()
+    fake.messages = _FakeMessages()
+    monkeypatch.setattr(gen, "_client", lambda: fake)
+
+    history = [
+        {"role": "user", "content": "甲方是谁？"},
+        {"role": "assistant", "content": "星曜科技 [1]。"},
+    ]
+    blocks = [_blk(1, "乙方为黄河智能装备厂")]
+    gen.generate_answer("那乙方呢？", blocks, history=history)
+
+    msgs = captured["messages"]
+    assert msgs[0] == {"role": "user", "content": "甲方是谁？"}
+    assert msgs[1] == {"role": "assistant", "content": "星曜科技 [1]。"}
+    assert msgs[-1]["role"] == "user"
+    assert "那乙方呢？" in msgs[-1]["content"]
+    assert "<context>" in msgs[-1]["content"]
+
+
+def test_generate_answer_no_blocks_refuses_even_with_history(monkeypatch):
+    import app.services.generation_service as gen
+
+    def _boom():
+        raise AssertionError("client must not be constructed")
+
+    monkeypatch.setattr(gen, "_client", _boom)
+    answer, cites = gen.generate_answer(
+        "那乙方呢？", [], history=[{"role": "user", "content": "x"}]
+    )
+    assert answer == "根据现有知识库无法回答这个问题。"
+    assert cites == []

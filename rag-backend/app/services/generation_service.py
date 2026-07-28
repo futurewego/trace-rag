@@ -72,7 +72,10 @@ def _map_citations(answer: str, blocks: list[ContextBlock]) -> list[Citation]:
 
 
 def generate_answer(
-    query: str, blocks: list[ContextBlock], low_confidence: bool = False
+    query: str,
+    blocks: list[ContextBlock],
+    low_confidence: bool = False,
+    history: list[dict] | None = None,
 ) -> tuple[str, list[Citation]]:
     if not blocks:
         return ("根据现有知识库无法回答这个问题。", [])
@@ -83,7 +86,7 @@ def generate_answer(
         model=settings.anthropic_model,
         max_tokens=1024,
         system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
+        messages=[*(history or []), {"role": "user", "content": user_prompt}],
     )
     answer = resp.content[0].text
     if low_confidence:
@@ -92,7 +95,10 @@ def generate_answer(
 
 
 def generate_answer_stream(
-    query: str, blocks: list[ContextBlock], low_confidence: bool = False
+    query: str,
+    blocks: list[ContextBlock],
+    low_confidence: bool = False,
+    history: list[dict] | None = None,
 ) -> Iterator[tuple[str, str | list[Citation]]]:
     """Generator yielding (event_type, payload).
 
@@ -116,7 +122,7 @@ def generate_answer_stream(
         model=settings.anthropic_model,
         max_tokens=1024,
         system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
+        messages=[*(history or []), {"role": "user", "content": user_prompt}],
     ) as stream:
         for delta in stream.text_stream:
             full_text += delta
