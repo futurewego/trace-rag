@@ -17,6 +17,7 @@ class RetrievalLog(Base, TimestampMixin):
         BigInteger, ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True
     )
     query: Mapped[str] = mapped_column(Text)
+    original_query: Mapped[str | None] = mapped_column(Text, nullable=True)
     retrieved_chunks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     chunks_sent_to_llm: Mapped[int] = mapped_column(Integer)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
