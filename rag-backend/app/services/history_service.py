@@ -1,10 +1,21 @@
 """读取会话历史，供 query 改写与生成共用。"""
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Message
+from app.services.generation_service import LOW_CONFIDENCE_NOTE
+
+_CITATION_MARKER_RE = re.compile(r"\s*\[\d+\]")
+
+
+def _clean(text: str) -> str:
+    """去掉旧轮的 [N] 引用标记与 ⚠️ 低置信前缀——它们只对产生它们的那一轮有意义，
+    回放给模型会诱导其照抄失效编号（引用错位）或自我添加 ⚠️ 前缀。"""
+    return _CITATION_MARKER_RE.sub("", text.removeprefix(LOW_CONFIDENCE_NOTE)).strip()
 
 
 def get_history(
@@ -22,7 +33,13 @@ def get_history(
         .limit(max_turns * 2)
     )
     rows = db.execute(stmt).scalars().all()
-    return [
-        {"role": m.role, "content": (m.content or "")[:content_max_chars]}
+    out = [
+        {"role": m.role, "content": _clean(m.content or "")[:content_max_chars]}
         for m in reversed(rows)
+        if m.role in ("user", "assistant") and (m.content or "").strip()
     ]
+    # Anthropic 要求首条必须是 user；孤儿消息（流中断）可能让窗口错位成 assistant 开头，
+    # 那会让该会话的每一轮都 400——宁可丢一条最旧的历史。
+    while out and out[0]["role"] != "user":
+        out.pop(0)
+    return out

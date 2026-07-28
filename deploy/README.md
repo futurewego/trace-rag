@@ -44,8 +44,10 @@ docker compose -f docker-compose.prod.yml up -d      # 开
 
 ```bash
 docker exec rag_pg psql -U raguser -d ragdb -c \
-  "SELECT id, query, chunks_sent_to_llm, retrieval_latency_ms, generation_latency_ms FROM retrieval_logs ORDER BY id DESC LIMIT 10"
+  "SELECT id, query, original_query, chunks_sent_to_llm, retrieval_latency_ms, generation_latency_ms FROM retrieval_logs ORDER BY id DESC LIMIT 10"
 ```
+
+`query` 是 P3 起用于检索的改写句；`original_query` 是用户原话。
 
 ### 重置（清空 DB 和 uploads，慎用）
 

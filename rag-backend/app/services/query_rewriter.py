@@ -47,15 +47,22 @@ def rewrite_query(query: str, history: list[dict]) -> str:
         )
         prompt = REWRITE_PROMPT.format(history=history_text, question=query)
 
-        resp = _client().messages.create(
-            model=settings.anthropic_model,
-            max_tokens=256,
-            temperature=0.0,
-            messages=[{"role": "user", "content": prompt}],
+        resp = (
+            _client()
+            .with_options(timeout=10.0, max_retries=0)
+            .messages.create(
+                model=settings.anthropic_model,
+                max_tokens=256,
+                messages=[{"role": "user", "content": prompt}],
+            )
         )
         rewritten = (resp.content[0].text or "").strip()
     except Exception as e:
-        logger.warning("query rewrite failed, using original: %s", e)
+        logger.error(
+            "query rewrite failed (model=%s), using original: %s",
+            settings.anthropic_model,
+            e,
+        )
         return query
 
     # 模型偶尔附带解释：只取首行

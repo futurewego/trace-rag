@@ -11,6 +11,7 @@ HISTORY = [
 
 def _mock_client(text):
     client = MagicMock()
+    client.with_options.return_value = client
     client.messages.create.return_value.content = [MagicMock(text=text)]
     return client
 
@@ -37,6 +38,7 @@ def test_short_chinese_query_long_rewrite_is_kept(mock_client):
 
 @patch("app.services.query_rewriter._client")
 def test_llm_exception_falls_back(mock_client):
+    mock_client.return_value.with_options.return_value = mock_client.return_value
     mock_client.return_value.messages.create.side_effect = RuntimeError("api down")
     assert rewrite_query("那乙方呢？", HISTORY) == "那乙方呢？"
 
