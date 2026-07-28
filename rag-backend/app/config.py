@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     rrf_sparse_weight: float = 0.5
     enable_sparse: bool = Field(True, alias="ENABLE_SPARSE")
 
+    # Multi-turn conversation (P3)
+    history_max_turns: int = 5
+    history_content_max_chars: int = 500
+    enable_query_rewrite: bool = True
+    rewrite_max_chars: int = 200
+
     # Cohere Rerank (optional)
     cohere_api_key: str = Field("", alias="COHERE_API_KEY")
     cohere_rerank_model: str = Field(
